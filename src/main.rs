@@ -7,6 +7,7 @@ use mcp_sdk_rs::types::{
     Implementation, ServerCapabilities, ToolResult, MessageContent, ClientCapabilities,
 };
 use serde::{Deserialize, Serialize};
+use serde_json;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -144,7 +145,80 @@ impl ServerHandler for WaveformHandler {
         match method {
             "tools/list" => {
                 Ok(serde_json::json!({
-                    "tools": []
+                    "tools": [
+                        {
+                            "name": "open_waveform",
+                            "description": "Open a VCD or FST waveform file",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "file_path": {
+                                        "type": "string",
+                                        "description": "Path to waveform file (.vcd or .fst)"
+                                    },
+                                    "alias": {
+                                        "type": "string",
+                                        "description": "Optional alias for waveform (defaults to filename)"
+                                    }
+                                },
+                                "required": ["file_path"]
+                            }
+                        },
+                        {
+                            "name": "list_signals",
+                            "description": "List all signals in an open waveform",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "waveform_id": {
+                                        "type": "string",
+                                        "description": "ID or alias of waveform"
+                                    }
+                                },
+                                "required": ["waveform_id"]
+                            }
+                        },
+                        {
+                            "name": "read_signal",
+                            "description": "Read signal values from a waveform",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "waveform_id": {
+                                        "type": "string",
+                                        "description": "ID or alias of waveform"
+                                    },
+                                    "signal_path": {
+                                        "type": "string",
+                                        "description": "Path to signal (e.g., 'top.module.signal')"
+                                    },
+                                    "time_index": {
+                                        "type": "integer",
+                                        "description": "Time index to read the value at"
+                                    }
+                                },
+                                "required": ["waveform_id", "signal_path", "time_index"]
+                            }
+                        },
+                        {
+                            "name": "get_signal_info",
+                            "description": "Get metadata about a signal",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "waveform_id": {
+                                        "type": "string",
+                                        "description": "ID or alias of waveform"
+                                    },
+                                    "signal_path": {
+                                        "type": "string",
+                                        "description": "Path to signal (e.g., 'top.module.signal')"
+                                    }
+                                },
+                                "required": ["waveform_id", "signal_path"]
+                            }
+                        }
+                    ]
                 }))
             }
             "tools/call" => {
@@ -466,7 +540,16 @@ async fn main() -> Result<()> {
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
             if !line.is_empty() {
-                let _ = read_sender_clone.send(line).await;
+                // Validate JSON before sending to transport to prevent panic
+                match serde_json::from_str::<serde_json::Value>(&line) {
+                    Ok(_) => {
+                        let _ = read_sender_clone.send(line).await;
+                    }
+                    Err(e) => {
+                        tracing::error!("Invalid JSON received: {} - error: {}", line, e);
+                        // Could send an error response, but transport expects valid messages
+                    }
+                }
             }
         }
     });
