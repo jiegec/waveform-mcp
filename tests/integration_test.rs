@@ -1,6 +1,3 @@
-use std::io::Write;
-use tempfile::NamedTempFile;
-
 #[test]
 fn test_signal_path_parsing() {
     // This tests the signal path parsing logic
