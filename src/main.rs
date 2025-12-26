@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use waveform_mcp::format_time;
 
 // Waveform store - using RwLock for interior mutability
 type WaveformStore = Arc<RwLock<HashMap<String, wellen::simple::Waveform>>>;
@@ -118,7 +119,7 @@ impl WaveformHandler {
 
         for var in hierarchy.iter_vars() {
             let path = var.full_name(hierarchy);
-            signals.push(format!("{} ({})", path, var.signal_ref().index()));
+            signals.push(path);
         }
 
         Ok(CallToolResult::success(vec![Content::text(format!(
@@ -150,6 +151,7 @@ impl WaveformHandler {
         waveform.load_signals(&[signal_ref]);
 
         let time_table = waveform.time_table();
+        let timescale = waveform.hierarchy().timescale();
         if args.time_index >= time_table.len() {
             return Ok(CallToolResult::error(vec![Content::text(format!(
                 "Time index {} out of range (max: {})",
@@ -159,6 +161,9 @@ impl WaveformHandler {
         }
 
         let time_idx = args.time_index;
+        let time_value = time_table[time_idx];
+        let formatted_time = format_time(time_value, timescale.as_ref());
+
         let signal = waveform.get_signal(signal_ref).ok_or_else(|| {
             McpError::internal_error("Signal not found after loading".to_string(), None)
         })?;
@@ -181,8 +186,8 @@ impl WaveformHandler {
         };
 
         Ok(CallToolResult::success(vec![Content::text(format!(
-            "Signal '{}' at time index {}: {}",
-            args.signal_path, args.time_index, value_str
+            "Signal '{}' at time index {} ({}): {}",
+            args.signal_path, args.time_index, formatted_time, value_str
         ))]))
     }
 

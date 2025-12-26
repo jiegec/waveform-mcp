@@ -3,6 +3,13 @@ name = "waveform-mcp"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "waveform-mcp"
+path = "src/main.rs"
+
 [dependencies]
 wellen = "0.20"
 rmcp = { version = "0.12", features = ["transport-io"] }

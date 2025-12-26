@@ -127,3 +127,32 @@ b000000001";
     println!("Found signals: {}", signals.join("\n"));
     assert!(!signals.is_empty(), "Should have found at least one signal");
 }
+
+#[test]
+fn test_format_time() {
+    use waveform_mcp::format_time;
+
+    // Test with nanosecond timescale (factor = 1)
+    let timescale_ns = wellen::Timescale {
+        factor: 1,
+        unit: wellen::TimescaleUnit::NanoSeconds,
+    };
+    assert_eq!(format_time(10, Some(&timescale_ns)), "10ns");
+
+    // Test with picosecond timescale (factor = 1000)
+    let timescale_ps = wellen::Timescale {
+        factor: 1000,
+        unit: wellen::TimescaleUnit::PicoSeconds,
+    };
+    assert_eq!(format_time(5, Some(&timescale_ps)), "5000ps");
+
+    // Test with millisecond timescale (factor = 1000000)
+    let timescale_ms = wellen::Timescale {
+        factor: 1000000,
+        unit: wellen::TimescaleUnit::MilliSeconds,
+    };
+    assert_eq!(format_time(2, Some(&timescale_ms)), "2000000ms");
+
+    // Test with no timescale
+    assert_eq!(format_time(100, None), "100 (unknown timescale)");
+}
