@@ -1,10 +1,13 @@
 //! Condition parsing and evaluation for conditional event search.
 
-use wellen;
-
 use super::{
     formatting::format_signal_value, formatting::format_time, hierarchy::find_signal_by_path,
 };
+use lalrpop_util::lalrpop_mod;
+use wellen;
+
+// Import generated parser
+lalrpop_mod!(condition);
 
 /// Literal value for signal comparison.
 #[derive(Debug, Clone, PartialEq)]
@@ -40,298 +43,10 @@ pub(super) enum Condition {
 /// - Parentheses for grouping
 /// - Verilog-style literals: 4'b0101, 3'd2, 5'h1A
 ///
-/// This is a prototype implementation for common operations.
+/// Uses lalrpop-generated parser.
 pub(super) fn parse_condition(condition: &str) -> Result<Condition, String> {
-    let tokens = tokenize_condition(condition)?;
-    let (ast, rest) = parse_or(&tokens)?;
-    if !rest.is_empty() {
-        return Err(format!("Unexpected tokens at end of condition: {:?}", rest));
-    }
-    Ok(ast)
-}
-
-/// Tokenize a condition string into tokens.
-fn tokenize_condition(condition: &str) -> Result<Vec<String>, String> {
-    let mut tokens = Vec::new();
-    let mut current = String::new();
-    let chars: Vec<char> = condition.chars().collect();
-    let mut i = 0;
-
-    while i < chars.len() {
-        let c = chars[i];
-        match c {
-            '&' => {
-                if i + 1 < chars.len() && chars[i + 1] == '&' {
-                    if !current.is_empty() {
-                        tokens.push(current.clone());
-                        current.clear();
-                    }
-                    tokens.push("&&".to_string());
-                    i += 1;
-                } else {
-                    current.push(c);
-                }
-            }
-            '|' => {
-                if i + 1 < chars.len() && chars[i + 1] == '|' {
-                    if !current.is_empty() {
-                        tokens.push(current.clone());
-                        current.clear();
-                    }
-                    tokens.push("||".to_string());
-                    i += 1;
-                } else {
-                    current.push(c);
-                }
-            }
-            '=' => {
-                if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    if !current.is_empty() {
-                        tokens.push(current.clone());
-                        current.clear();
-                    }
-                    tokens.push("==".to_string());
-                    i += 1;
-                } else {
-                    return Err(format!("Unexpected single '=' at position {}", i));
-                }
-            }
-            '!' => {
-                if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    if !current.is_empty() {
-                        tokens.push(current.clone());
-                        current.clear();
-                    }
-                    tokens.push("!=".to_string());
-                    i += 1;
-                } else {
-                    if !current.is_empty() {
-                        tokens.push(current.clone());
-                        current.clear();
-                    }
-                    tokens.push("!".to_string());
-                }
-            }
-            '$' => {
-                // Handle $past keyword
-                if i + 4 < chars.len() {
-                    let rest: String = chars[i + 1..i + 5].iter().collect();
-                    if rest == "past" {
-                        if !current.is_empty() {
-                            tokens.push(current.clone());
-                            current.clear();
-                        }
-                        tokens.push("$past".to_string());
-                        i += 4;
-                    } else {
-                        current.push(c);
-                    }
-                } else {
-                    current.push(c);
-                }
-            }
-            '(' | ')' => {
-                if !current.is_empty() {
-                    tokens.push(current.clone());
-                    current.clear();
-                }
-                tokens.push(c.to_string());
-            }
-            ' ' | '\t' => {
-                if !current.is_empty() {
-                    tokens.push(current.clone());
-                    current.clear();
-                }
-            }
-            _ => {
-                current.push(c);
-            }
-        }
-        i += 1;
-    }
-
-    if !current.is_empty() {
-        tokens.push(current);
-    }
-
-    Ok(tokens)
-}
-
-/// Parse an OR expression (lowest precedence).
-fn parse_or(tokens: &[String]) -> Result<(Condition, &[String]), String> {
-    let (mut left, mut rest) = parse_and(tokens)?;
-    while !rest.is_empty() {
-        if rest.first() == Some(&"||".to_string()) {
-            rest = &rest[1..];
-            let (right, new_rest) = parse_and(rest)?;
-            left = Condition::Or(Box::new(left), Box::new(right));
-            rest = new_rest;
-        } else {
-            break;
-        }
-    }
-    Ok((left, rest))
-}
-
-/// Parse an AND expression.
-fn parse_and(tokens: &[String]) -> Result<(Condition, &[String]), String> {
-    let (mut left, mut rest) = parse_comparison(tokens)?;
-    while !rest.is_empty() {
-        if rest.first() == Some(&"&&".to_string()) {
-            rest = &rest[1..];
-            let (right, new_rest) = parse_comparison(rest)?;
-            left = Condition::And(Box::new(left), Box::new(right));
-            rest = new_rest;
-        } else {
-            break;
-        }
-    }
-    Ok((left, rest))
-}
-
-/// Parse a comparison expression (==, !=).
-fn parse_comparison(tokens: &[String]) -> Result<(Condition, &[String]), String> {
-    let (mut left, mut rest) = parse_not(tokens)?;
-    while !rest.is_empty() {
-        if rest.first() == Some(&"==".to_string()) {
-            rest = &rest[1..];
-            let (right, new_rest) = parse_not(rest)?;
-            left = Condition::Eq(Box::new(left), Box::new(right));
-            rest = new_rest;
-        } else if rest.first() == Some(&"!=".to_string()) {
-            rest = &rest[1..];
-            let (right, new_rest) = parse_not(rest)?;
-            left = Condition::Neq(Box::new(left), Box::new(right));
-            rest = new_rest;
-        } else {
-            break;
-        }
-    }
-    Ok((left, rest))
-}
-
-/// Parse a NOT expression.
-fn parse_not(tokens: &[String]) -> Result<(Condition, &[String]), String> {
-    if tokens.first() == Some(&"!".to_string()) {
-        let (expr, rest) = parse_not(&tokens[1..])?;
-        Ok((Condition::Not(Box::new(expr)), rest))
-    } else {
-        parse_primary(tokens)
-    }
-}
-
-/// Parse a primary expression (signal, literal, $past(), or parenthesized expression).
-fn parse_primary(tokens: &[String]) -> Result<(Condition, &[String]), String> {
-    if tokens.is_empty() {
-        return Err("Unexpected end of tokens".to_string());
-    }
-
-    if tokens.first() == Some(&"(".to_string()) {
-        let (expr, rest) = parse_or(&tokens[1..])?;
-        if rest.first() != Some(&")".to_string()) {
-            return Err("Expected closing parenthesis".to_string());
-        }
-        Ok((expr, &rest[1..]))
-    } else if tokens.first() == Some(&"$past".to_string()) {
-        // Parse $past(expression)
-        if tokens.len() < 3 {
-            return Err("Expected expression and closing parenthesis after $past".to_string());
-        }
-        if tokens[1] != "(" {
-            return Err("Expected '(' after $past".to_string());
-        }
-        // Find matching closing parenthesis
-        let mut depth = 1;
-        let mut close_pos = 2;
-        while close_pos < tokens.len() && depth > 0 {
-            if tokens[close_pos] == "(" {
-                depth += 1;
-            } else if tokens[close_pos] == ")" {
-                depth -= 1;
-            }
-            if depth == 0 {
-                break;
-            }
-            close_pos += 1;
-        }
-        if depth != 0 {
-            return Err("Unmatched parentheses in $past expression".to_string());
-        }
-        // Parse inner expression (tokens[2..close_pos])
-        let (expr, rest) = parse_or(&tokens[2..close_pos])?;
-        if !rest.is_empty() {
-            return Err(format!("Unexpected tokens in $past(): {:?}", rest));
-        }
-        Ok((Condition::Past(Box::new(expr)), &tokens[close_pos + 1..]))
-    } else {
-        // Try to parse as literal first
-        if let Ok(literal) = parse_verilog_literal(&tokens[0]) {
-            return Ok((Condition::Literal(literal), &tokens[1..]));
-        }
-
-        // Must be a signal name
-        let signal_name = tokens[0].clone();
-        Ok((Condition::Signal(signal_name), &tokens[1..]))
-    }
-}
-
-/// Parse a Verilog-style literal (e.g., 4'b0101, 3'd2, 5'h1A).
-fn parse_verilog_literal(s: &str) -> Result<Literal, String> {
-    let lower = s.to_lowercase();
-
-    // Pattern: <width>'<base><value>
-    // where base is b (binary), d (decimal), h (hex)
-    let parts: Vec<&str> = lower.split('\'').collect();
-    if parts.len() != 2 {
-        return Err("Invalid literal format".to_string());
-    }
-
-    let _width: usize = parts[0]
-        .parse()
-        .map_err(|_| format!("Invalid width: {}", parts[0]))?;
-
-    let value_part = parts[1];
-    if value_part.is_empty() {
-        return Err("Missing base specifier".to_string());
-    }
-
-    let base = value_part.chars().next().unwrap();
-    let value_str = &value_part[1..];
-
-    match base {
-        'b' => {
-            // Binary literal
-            let mut bits = Vec::new();
-            for c in value_str.chars() {
-                match c {
-                    '0' => bits.push(false),
-                    '1' => bits.push(true),
-                    'x' | 'z' => return Err("X and Z not supported in comparisons".to_string()),
-                    '_' => {} // Skip underscores
-                    _ => return Err(format!("Invalid binary digit: {}", c)),
-                }
-            }
-            Ok(Literal::Binary(bits))
-        }
-        'd' => {
-            // Decimal literal
-            let value: u64 = value_str
-                .chars()
-                .filter(|c| *c != '_')
-                .collect::<String>()
-                .parse()
-                .map_err(|_| format!("Invalid decimal value: {}", value_str))?;
-            Ok(Literal::Decimal(value))
-        }
-        'h' => {
-            // Hexadecimal literal
-            let value_str: String = value_str.chars().filter(|c| *c != '_').collect();
-            let value = u64::from_str_radix(&value_str, 16)
-                .map_err(|_| format!("Invalid hex value: {}", value_str))?;
-            Ok(Literal::Hexadecimal(value))
-        }
-        _ => Err(format!("Unknown base specifier: {}", base)),
-    }
+    let parser = crate::condition::condition::ExprParser::new();
+    parser.parse(condition).map_err(|e| e.to_string())
 }
 
 /// Evaluate a condition at a specific time index.
@@ -354,12 +69,20 @@ fn evaluate_condition(
         Condition::And(left, right) => {
             let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
             let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
-            Ok(if left_val != 0 && right_val != 0 { 1 } else { 0 })
+            Ok(if left_val != 0 && right_val != 0 {
+                1
+            } else {
+                0
+            })
         }
         Condition::Or(left, right) => {
             let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
             let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
-            Ok(if left_val != 0 || right_val != 0 { 1 } else { 0 })
+            Ok(if left_val != 0 || right_val != 0 {
+                1
+            } else {
+                0
+            })
         }
         Condition::Not(expr) => {
             let val = evaluate_condition(expr, waveform, signal_cache, time_idx)?;
@@ -471,6 +194,58 @@ fn literal_to_i64(literal: &Literal) -> Result<i64, String> {
         Literal::Decimal(v) => Ok(*v as i64),
         Literal::Hexadecimal(v) => Ok(*v as i64),
     }
+}
+
+/// Parse a binary literal (e.g., "4'b0101") from the condition grammar.
+///
+/// This function is called by the lalrpop-generated parser.
+pub(super) fn parse_binary_literal(s: &str) -> Literal {
+    let lower = s.to_lowercase();
+    let parts: Vec<&str> = lower.split('\'').collect();
+    if parts.len() != 2 {
+        panic!("Invalid binary literal: {}", s);
+    }
+
+    let value_str = parts[1].trim_start_matches('b').replace('_', "");
+    let mut bits = Vec::new();
+    for c in value_str.chars() {
+        match c {
+            '0' => bits.push(false),
+            '1' => bits.push(true),
+            _ => panic!("Invalid binary digit: {}", c),
+        }
+    }
+    Literal::Binary(bits)
+}
+
+/// Parse a decimal literal (e.g., "3'd2") from the condition grammar.
+///
+/// This function is called by the lalrpop-generated parser.
+pub(super) fn parse_decimal_literal(s: &str) -> Literal {
+    let lower = s.to_lowercase();
+    let parts: Vec<&str> = lower.split('\'').collect();
+    if parts.len() != 2 {
+        panic!("Invalid decimal literal: {}", s);
+    }
+
+    let value_str = parts[1].trim_start_matches('d').replace('_', "");
+    let value: u64 = value_str.parse().expect("Invalid decimal value");
+    Literal::Decimal(value)
+}
+
+/// Parse a hex literal (e.g., "5'h1A") from the condition grammar.
+///
+/// This function is called by the lalrpop-generated parser.
+pub(super) fn parse_hex_literal(s: &str) -> Literal {
+    let lower = s.to_lowercase();
+    let parts: Vec<&str> = lower.split('\'').collect();
+    if parts.len() != 2 {
+        panic!("Invalid hex literal: {}", s);
+    }
+
+    let value_str = parts[1].trim_start_matches('h').replace('_', "");
+    let value = u64::from_str_radix(&value_str, 16).expect("Invalid hex value");
+    Literal::Hexadecimal(value)
 }
 
 /// Find events where a condition is satisfied.

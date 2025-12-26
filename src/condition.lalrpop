@@ -1,0 +1,48 @@
+use crate::condition::Condition;
+use crate::condition::Literal;
+
+grammar;
+
+pub Expr: Condition = {
+    <left: Expr> "||" <right: Factor> => Condition::Or(Box::new(left), Box::new(right)),
+    Factor,
+};
+
+pub Factor: Condition = {
+    <left: Factor> "&&" <right: UnaryOp> => Condition::And(Box::new(left), Box::new(right)),
+    UnaryOp,
+};
+
+pub UnaryOp: Condition = {
+    "!" <expr: UnaryOp> => Condition::Not(Box::new(expr)),
+    Comparison,
+};
+
+pub Comparison: Condition = {
+    <left: Comparison> "==" <right: Primary> => Condition::Eq(Box::new(left), Box::new(right)),
+    <left: Comparison> "!=" <right: Primary> => Condition::Neq(Box::new(left), Box::new(right)),
+    Primary,
+};
+
+pub Primary: Condition = {
+    "(" <expr: Expr> ")" => expr,
+    "$past" "(" <expr: Expr> ")" => Condition::Past(Box::new(expr)),
+    Literal => Condition::Literal(<>),
+    Identifier => Condition::Signal(<>.to_string()),
+};
+
+pub Literal: Literal = {
+    <s:r"[0-9]+'b[01_]+"> => crate::condition::parse_binary_literal(&s),
+    <s:r"[0-9]+'d[0-9_]+"> => crate::condition::parse_decimal_literal(&s),
+    <s:r"[0-9]+'h[0-9a-fA-F_]+"> => crate::condition::parse_hex_literal(&s),
+};
+
+Identifier: String = {
+    <s:r"[a-zA-Z_][a-zA-Z0-9_.]*"> => s.to_string(),
+};
+
+// Token rules to handle whitespace
+match {
+    r"\s*" => { },
+    _,
+}
