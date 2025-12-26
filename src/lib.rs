@@ -366,6 +366,14 @@ pub fn find_signal_events(
     Ok(events)
 }
 
+/// Literal value for signal comparison.
+#[derive(Debug, Clone, PartialEq)]
+enum Literal {
+    Binary(Vec<bool>),
+    Decimal(u64),
+    Hexadecimal(u64),
+}
+
 /// Condition for finding events based on signal values.
 #[derive(Debug, Clone)]
 enum Condition {
@@ -373,6 +381,9 @@ enum Condition {
     Or(Box<Condition>, Box<Condition>),
     Not(Box<Condition>),
     Signal(String),
+    Eq(Box<Condition>, Box<Condition>),
+    Neq(Box<Condition>, Box<Condition>),
+    Literal(Literal),
 }
 
 /// Parse a simple condition string into a Condition AST.
@@ -382,11 +393,14 @@ enum Condition {
 /// - `&&` for AND
 /// - `||` for OR
 /// - `!` for NOT
+/// - `==` for equality comparison
+/// - `!=` for inequality comparison
 /// - Parentheses for grouping
+/// - Verilog-style literals: 4'b0101, 3'd2, 5'h1A
 ///
 /// This is a prototype implementation for common operations.
 fn parse_condition(condition: &str) -> Result<Condition, String> {
-    let tokens = tokenize_condition(condition);
+    let tokens = tokenize_condition(condition)?;
     let (ast, rest) = parse_or(&tokens)?;
     if !rest.is_empty() {
         return Err(format!("Unexpected tokens at end of condition: {:?}", rest));
@@ -395,7 +409,7 @@ fn parse_condition(condition: &str) -> Result<Condition, String> {
 }
 
 /// Tokenize a condition string into tokens.
-fn tokenize_condition(condition: &str) -> Vec<String> {
+fn tokenize_condition(condition: &str) -> Result<Vec<String>, String> {
     let mut tokens = Vec::new();
     let mut current = String::new();
     let chars: Vec<char> = condition.chars().collect();
@@ -428,12 +442,33 @@ fn tokenize_condition(condition: &str) -> Vec<String> {
                     current.push(c);
                 }
             }
-            '!' => {
-                if !current.is_empty() {
-                    tokens.push(current.clone());
-                    current.clear();
+            '=' => {
+                if i + 1 < chars.len() && chars[i + 1] == '=' {
+                    if !current.is_empty() {
+                        tokens.push(current.clone());
+                        current.clear();
+                    }
+                    tokens.push("==".to_string());
+                    i += 1;
+                } else {
+                    return Err(format!("Unexpected single '=' at position {}", i));
                 }
-                tokens.push("!".to_string());
+            }
+            '!' => {
+                if i + 1 < chars.len() && chars[i + 1] == '=' {
+                    if !current.is_empty() {
+                        tokens.push(current.clone());
+                        current.clear();
+                    }
+                    tokens.push("!=".to_string());
+                    i += 1;
+                } else {
+                    if !current.is_empty() {
+                        tokens.push(current.clone());
+                        current.clear();
+                    }
+                    tokens.push("!".to_string());
+                }
             }
             '(' | ')' => {
                 if !current.is_empty() {
@@ -459,7 +494,7 @@ fn tokenize_condition(condition: &str) -> Vec<String> {
         tokens.push(current);
     }
 
-    tokens
+    Ok(tokens)
 }
 
 /// Parse an OR expression (lowest precedence).
@@ -480,12 +515,33 @@ fn parse_or(tokens: &[String]) -> Result<(Condition, &[String]), String> {
 
 /// Parse an AND expression.
 fn parse_and(tokens: &[String]) -> Result<(Condition, &[String]), String> {
-    let (mut left, mut rest) = parse_not(tokens)?;
+    let (mut left, mut rest) = parse_comparison(tokens)?;
     while !rest.is_empty() {
         if rest.get(0) == Some(&"&&".to_string()) {
             rest = &rest[1..];
-            let (right, new_rest) = parse_not(rest)?;
+            let (right, new_rest) = parse_comparison(rest)?;
             left = Condition::And(Box::new(left), Box::new(right));
+            rest = new_rest;
+        } else {
+            break;
+        }
+    }
+    Ok((left, rest))
+}
+
+/// Parse a comparison expression (==, !=).
+fn parse_comparison(tokens: &[String]) -> Result<(Condition, &[String]), String> {
+    let (mut left, mut rest) = parse_not(tokens)?;
+    while !rest.is_empty() {
+        if rest.get(0) == Some(&"==".to_string()) {
+            rest = &rest[1..];
+            let (right, new_rest) = parse_not(rest)?;
+            left = Condition::Eq(Box::new(left), Box::new(right));
+            rest = new_rest;
+        } else if rest.get(0) == Some(&"!=".to_string()) {
+            rest = &rest[1..];
+            let (right, new_rest) = parse_not(rest)?;
+            left = Condition::Neq(Box::new(left), Box::new(right));
             rest = new_rest;
         } else {
             break;
@@ -504,7 +560,7 @@ fn parse_not(tokens: &[String]) -> Result<(Condition, &[String]), String> {
     }
 }
 
-/// Parse a primary expression (signal or parenthesized expression).
+/// Parse a primary expression (signal, literal, or parenthesized expression).
 fn parse_primary(tokens: &[String]) -> Result<(Condition, &[String]), String> {
     if tokens.is_empty() {
         return Err("Unexpected end of tokens".to_string());
@@ -517,9 +573,73 @@ fn parse_primary(tokens: &[String]) -> Result<(Condition, &[String]), String> {
         }
         Ok((expr, &rest[1..]))
     } else {
+        // Try to parse as literal first
+        if let Ok(literal) = parse_verilog_literal(&tokens[0]) {
+            return Ok((Condition::Literal(literal), &tokens[1..]));
+        }
+
         // Must be a signal name
         let signal_name = tokens[0].clone();
         Ok((Condition::Signal(signal_name), &tokens[1..]))
+    }
+}
+
+/// Parse a Verilog-style literal (e.g., 4'b0101, 3'd2, 5'h1A).
+fn parse_verilog_literal(s: &str) -> Result<Literal, String> {
+    let lower = s.to_lowercase();
+
+    // Pattern: <width>'<base><value>
+    // where base is b (binary), d (decimal), h (hex)
+    let parts: Vec<&str> = lower.split('\'').collect();
+    if parts.len() != 2 {
+        return Err("Invalid literal format".to_string());
+    }
+
+    let _width: usize = parts[0]
+        .parse()
+        .map_err(|_| format!("Invalid width: {}", parts[0]))?;
+
+    let value_part = parts[1];
+    if value_part.is_empty() {
+        return Err("Missing base specifier".to_string());
+    }
+
+    let base = value_part.chars().next().unwrap();
+    let value_str = &value_part[1..];
+
+    match base {
+        'b' => {
+            // Binary literal
+            let mut bits = Vec::new();
+            for c in value_str.chars() {
+                match c {
+                    '0' => bits.push(false),
+                    '1' => bits.push(true),
+                    'x' | 'z' => return Err("X and Z not supported in comparisons".to_string()),
+                    '_' => {} // Skip underscores
+                    _ => return Err(format!("Invalid binary digit: {}", c)),
+                }
+            }
+            Ok(Literal::Binary(bits))
+        }
+        'd' => {
+            // Decimal literal
+            let value: u64 = value_str
+                .chars()
+                .filter(|c| *c != '_')
+                .collect::<String>()
+                .parse()
+                .map_err(|_| format!("Invalid decimal value: {}", value_str))?;
+            Ok(Literal::Decimal(value))
+        }
+        'h' => {
+            // Hexadecimal literal
+            let value_str: String = value_str.chars().filter(|c| *c != '_').collect();
+            let value = u64::from_str_radix(&value_str, 16)
+                .map_err(|_| format!("Invalid hex value: {}", value_str))?;
+            Ok(Literal::Hexadecimal(value))
+        }
+        _ => Err(format!("Unknown base specifier: {}", base)),
     }
 }
 
@@ -556,28 +676,128 @@ fn evaluate_condition(
         }
         Condition::Signal(path) => {
             // Get signal ref from cache
-            let signal_ref = signal_cache.get(path).ok_or_else(|| {
-                format!("Signal not found in cache: {}", path)
-            })?;
+            let signal_ref = signal_cache
+                .get(path)
+                .ok_or_else(|| format!("Signal not found in cache: {}", path))?;
 
             // Get signal from waveform
-            let signal = waveform.get_signal(*signal_ref).ok_or_else(|| {
-                format!("Signal not found in waveform: {}", path)
-            })?;
+            let signal = waveform
+                .get_signal(*signal_ref)
+                .ok_or_else(|| format!("Signal not found in waveform: {}", path))?;
 
             // Get value at time index
-            let time_table_idx: wellen::TimeTableIdx = time_idx.try_into()
+            let time_table_idx: wellen::TimeTableIdx = time_idx
+                .try_into()
                 .map_err(|_| format!("Time index {} too large", time_idx))?;
 
-            let offset = signal.get_offset(time_table_idx).ok_or_else(|| {
-                format!("No data for signal {} at time index {}", path, time_idx)
-            })?;
+            let offset = signal
+                .get_offset(time_table_idx)
+                .ok_or_else(|| format!("No data for signal {} at time index {}", path, time_idx))?;
 
             let signal_value = signal.get_value_at(&offset, 0);
 
             // Evaluate as boolean: true if non-zero (for numeric values) or "1"/"true" (for string values)
             Ok(is_signal_true(signal_value))
         }
+        Condition::Eq(left, right) => {
+            let left_val = evaluate_condition_to_value(left, waveform, signal_cache, time_idx)?;
+            let right_val = evaluate_condition_to_value(right, waveform, signal_cache, time_idx)?;
+            Ok(left_val == right_val)
+        }
+        Condition::Neq(left, right) => {
+            let left_val = evaluate_condition_to_value(left, waveform, signal_cache, time_idx)?;
+            let right_val = evaluate_condition_to_value(right, waveform, signal_cache, time_idx)?;
+            Ok(left_val != right_val)
+        }
+        Condition::Literal(_) => Err("Literals must be used in comparisons".to_string()),
+    }
+}
+
+/// Evaluate a condition to a signal value (for comparison purposes).
+fn evaluate_condition_to_value(
+    condition: &Condition,
+    waveform: &mut wellen::simple::Waveform,
+    signal_cache: &std::collections::HashMap<String, wellen::SignalRef>,
+    time_idx: usize,
+) -> Result<i64, String> {
+    match condition {
+        Condition::Signal(path) => {
+            let signal_ref = signal_cache
+                .get(path)
+                .ok_or_else(|| format!("Signal not found in cache: {}", path))?;
+
+            let signal = waveform
+                .get_signal(*signal_ref)
+                .ok_or_else(|| format!("Signal not found in waveform: {}", path))?;
+
+            let time_table_idx: wellen::TimeTableIdx = time_idx
+                .try_into()
+                .map_err(|_| format!("Time index {} too large", time_idx))?;
+
+            let offset = signal
+                .get_offset(time_table_idx)
+                .ok_or_else(|| format!("No data for signal {} at time index {}", path, time_idx))?;
+
+            let signal_value = signal.get_value_at(&offset, 0);
+            signal_value_to_i64(signal_value)
+        }
+        Condition::Literal(literal) => literal_to_i64(literal),
+        _ => Err("Expected signal or literal in comparison".to_string()),
+    }
+}
+
+/// Convert a signal value to i64 for comparison.
+fn signal_value_to_i64(signal_value: wellen::SignalValue) -> Result<i64, String> {
+    match signal_value {
+        wellen::SignalValue::Binary(data, _) => {
+            let mut value: i64 = 0;
+            for (i, &b) in data.iter().enumerate() {
+                if b != 0 {
+                    value |= (b as i64) << i;
+                }
+            }
+            Ok(value)
+        }
+        wellen::SignalValue::FourValue(data, _) => {
+            let mut value: i64 = 0;
+            for (i, &b) in data.iter().enumerate() {
+                if b != 0 {
+                    value |= (b as i64) << i;
+                }
+            }
+            Ok(value)
+        }
+        wellen::SignalValue::NineValue(data, _) => {
+            let mut value: i64 = 0;
+            for (i, &b) in data.iter().enumerate() {
+                if b != 0 {
+                    value |= (b as i64) << i;
+                }
+            }
+            Ok(value)
+        }
+        wellen::SignalValue::String(s) => s
+            .parse()
+            .map_err(|_| format!("Cannot convert string '{}' to integer", s)),
+        wellen::SignalValue::Real(r) => Ok(r as i64),
+        wellen::SignalValue::Event => Err("Event signal cannot be compared".to_string()),
+    }
+}
+
+/// Convert a literal to i64 for comparison.
+fn literal_to_i64(literal: &Literal) -> Result<i64, String> {
+    match literal {
+        Literal::Binary(bits) => {
+            let mut value: i64 = 0;
+            for (i, &bit) in bits.iter().rev().enumerate() {
+                if bit {
+                    value |= 1i64 << i;
+                }
+            }
+            Ok(value)
+        }
+        Literal::Decimal(v) => Ok(*v as i64),
+        Literal::Hexadecimal(v) => Ok(*v as i64),
     }
 }
 
@@ -588,18 +808,10 @@ fn evaluate_condition(
 /// For real signals: true if value is non-zero
 fn is_signal_true(signal_value: wellen::SignalValue) -> bool {
     match signal_value {
-        wellen::SignalValue::Binary(data, _) => {
-            data.iter().any(|&b| b != 0)
-        }
-        wellen::SignalValue::FourValue(data, _) => {
-            data.iter().any(|&b| b != 0)
-        }
-        wellen::SignalValue::NineValue(data, _) => {
-            data.iter().any(|&b| b != 0)
-        }
-        wellen::SignalValue::String(s) => {
-            s == "1" || s.eq_ignore_ascii_case("true")
-        }
+        wellen::SignalValue::Binary(data, _) => data.iter().any(|&b| b != 0),
+        wellen::SignalValue::FourValue(data, _) => data.iter().any(|&b| b != 0),
+        wellen::SignalValue::NineValue(data, _) => data.iter().any(|&b| b != 0),
+        wellen::SignalValue::String(s) => s == "1" || s.eq_ignore_ascii_case("true"),
         wellen::SignalValue::Real(r) => r != 0.0,
         wellen::SignalValue::Event => false,
     }
@@ -665,7 +877,8 @@ pub fn find_conditional_events(
             for signal_name in &signal_names {
                 if let Some(signal_ref) = signal_cache.get(signal_name) {
                     if let Some(signal) = waveform.get_signal(*signal_ref) {
-                        let time_table_idx: wellen::TimeTableIdx = time_idx.try_into()
+                        let time_table_idx: wellen::TimeTableIdx = time_idx
+                            .try_into()
                             .map_err(|_| format!("Time index {} too large", time_idx))?;
 
                         if let Some(offset) = signal.get_offset(time_table_idx) {
@@ -714,11 +927,21 @@ fn extract_signal_names_recursive(condition: &Condition, names: &mut Vec<String>
         Condition::Not(expr) => {
             extract_signal_names_recursive(expr, names);
         }
+        Condition::Eq(left, right) => {
+            extract_signal_names_recursive(left, names);
+            extract_signal_names_recursive(right, names);
+        }
+        Condition::Neq(left, right) => {
+            extract_signal_names_recursive(left, names);
+            extract_signal_names_recursive(right, names);
+        }
         Condition::Signal(path) => {
             if !names.contains(path) {
                 names.push(path.clone());
             }
         }
+        Condition::Literal(_) => {
+            // Literals don't need to be loaded
+        }
     }
 }
-

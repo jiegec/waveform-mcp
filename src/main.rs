@@ -306,7 +306,7 @@ impl WaveformHandler {
     }
 
     #[tool(
-        description = "Find events where a condition is satisfied. The condition uses signal paths with && (AND), || (OR), ! (NOT), and parentheses. Example: 'TOP.signal1 && TOP.signal2'. Optional: start_time_index, end_time_index, limit."
+        description = "Find events where a condition is satisfied. The condition uses signal paths with && (AND), || (OR), ! (NOT), == (equality), != (inequality), and parentheses. Supports Verilog-style literals: 4'b0101, 3'd2, 5'h1A. Examples: 'TOP.signal1 && TOP.signal2', 'TOP.counter == 4'b0101', 'TOP.state != 3'd2'. Optional: start_time_index, end_time_index, limit."
     )]
     async fn find_conditional_events(
         &self,
@@ -326,14 +326,8 @@ impl WaveformHandler {
             .unwrap_or(time_table.len().saturating_sub(1));
         let limit = args.limit.unwrap_or(-1);
 
-        let events = find_conditional_events(
-            waveform,
-            &args.condition,
-            start_idx,
-            end_idx,
-            limit,
-        )
-        .map_err(|e| McpError::invalid_params(e, None))?;
+        let events = find_conditional_events(waveform, &args.condition, start_idx, end_idx, limit)
+            .map_err(|e| McpError::invalid_params(e, None))?;
 
         Ok(CallToolResult::success(vec![Content::text(format!(
             "Found {} events for condition '{}' (time range: {} to {}):\n{}",

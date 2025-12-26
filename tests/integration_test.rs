@@ -664,3 +664,116 @@ $enddefinitions $end\n\
     let result = find_conditional_events(&mut waveform, "(top.sig1 && top.sig1", 0, 0, -1);
     assert!(result.is_err(), "Should fail for invalid syntax");
 }
+
+#[test]
+fn test_comparison_operators() {
+    use waveform_mcp::find_conditional_events;
+
+    // Create a VCD file with a counter signal
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 4 0 counter $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+b0000 0\n\
+#10\n\
+b0001 0\n\
+#20\n\
+b0010 0\n\
+#30\n\
+b0011 0\n\
+#40\n\
+b0100 0\n\
+#50\n\
+b0101 0\n\
+#60\n\
+b0110 0\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test equality with binary literal
+    let events = find_conditional_events(&mut waveform, "top.counter == 4'b0101", 0, 6, -1)
+        .expect("Should find events for binary literal comparison");
+    assert!(!events.is_empty(), "Should find at least one event");
+    assert!(
+        events[0].contains("top.counter = [5]"),
+        "Should show counter value 5 (0b0101)"
+    );
+
+    // Test equality with decimal literal
+    let events = find_conditional_events(&mut waveform, "top.counter == 3'd3", 0, 6, -1)
+        .expect("Should find events for decimal literal comparison");
+    assert!(!events.is_empty(), "Should find at least one event");
+    assert!(
+        events[0].contains("top.counter = [3]"),
+        "Should show counter value 3"
+    );
+
+    // Test equality with hex literal
+    let events = find_conditional_events(&mut waveform, "top.counter == 4'h6", 0, 6, -1)
+        .expect("Should find events for hex literal comparison");
+    assert!(!events.is_empty(), "Should find at least one event");
+    assert!(
+        events[0].contains("top.counter = [6]"),
+        "Should show counter value 6"
+    );
+
+    // Test inequality
+    let events = find_conditional_events(&mut waveform, "top.counter != 4'b0000", 0, 6, -1)
+        .expect("Should find events for inequality comparison");
+    assert!(!events.is_empty(), "Should find at least one event");
+
+    // Test complex condition with comparison
+    let events = find_conditional_events(
+        &mut waveform,
+        "top.counter == 4'b0101 || top.counter == 4'b0011",
+        0,
+        6,
+        -1,
+    )
+    .expect("Should find events for complex comparison");
+    assert_eq!(
+        events.len(),
+        2,
+        "Should find 2 events matching either condition"
+    );
+}
+
+#[test]
+fn test_verilog_literal_parsing() {
+    use waveform_mcp::find_conditional_events;
+
+    // Test invalid literal format
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 1 0 sig1 $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+00\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test invalid literal format
+    let result = find_conditional_events(&mut waveform, "top.sig1 == invalid", 0, 0, -1);
+    assert!(result.is_err(), "Should fail for invalid literal format");
+
+    // Test single = (should be ==)
+    let result = find_conditional_events(&mut waveform, "top.sig1 = 1", 0, 0, -1);
+    assert!(result.is_err(), "Should fail for single =");
+}
