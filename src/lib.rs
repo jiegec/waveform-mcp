@@ -73,3 +73,47 @@ pub fn find_signal_by_path(hierarchy: &wellen::Hierarchy, path: &str) -> Option<
     }
     None
 }
+
+/// Find a scope by its hierarchical path in the waveform hierarchy.
+///
+/// # Arguments
+/// * `hierarchy` - The waveform hierarchy to search
+/// * `path` - The hierarchical path to the scope (e.g., "top.module")
+///
+/// # Returns
+/// `Some(ScopeRef)` if the scope is found, `None` otherwise.
+pub fn find_scope_by_path(hierarchy: &wellen::Hierarchy, path: &str) -> Option<wellen::ScopeRef> {
+    for scope_ref in hierarchy.scopes() {
+        let scope = &hierarchy[scope_ref];
+        let scope_path = scope.full_name(hierarchy);
+        if scope_path == path {
+            return Some(scope_ref);
+        }
+        // Recursively check child scopes
+        if let Some(child_ref) = find_scope_by_path_recursive(hierarchy, scope_ref, path) {
+            return Some(child_ref);
+        }
+    }
+    None
+}
+
+fn find_scope_by_path_recursive(
+    hierarchy: &wellen::Hierarchy,
+    parent_ref: wellen::ScopeRef,
+    target_path: &str,
+) -> Option<wellen::ScopeRef> {
+    let parent = &hierarchy[parent_ref];
+    for child_ref in parent.scopes(hierarchy) {
+        let child = &hierarchy[child_ref];
+        let child_path = child.full_name(hierarchy);
+        if child_path == target_path {
+            return Some(child_ref);
+        }
+        // Recursively check child scopes
+        if let Some(found) = find_scope_by_path_recursive(hierarchy, child_ref, target_path) {
+            return Some(found);
+        }
+    }
+    None
+}
+

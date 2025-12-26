@@ -226,3 +226,84 @@ fn test_format_time() {
     // Test with no timescale
     assert_eq!(format_time(100, None), "100 (unknown timescale)");
 }
+
+#[test]
+fn test_list_signals_recursive() {
+    // Create a VCD file with nested hierarchy
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 1 ! clk $end\n\
+$scope module submodule1 $end\n\
+$var wire 1 @ data1 $end\n\
+$scope module inner $end\n\
+$var wire 1 # data2 $end\n\
+$upscope $end\n\
+$upscope $end\n\
+$scope module submodule2 $end\n\
+$var wire 1 $ data3 $end\n\
+$upscope $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+0!\n\
+0@\n\
+0#\n\
+0$";
+
+    let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    write!(temp_file, "{}", vcd_content).expect("Failed to write VCD content");
+    temp_file.flush().expect("Failed to flush");
+
+    let waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+    let hierarchy = waveform.hierarchy();
+
+    // Test recursive mode (default): should find all signals at all levels
+    let mut all_signals: Vec<String> = Vec::new();
+    for var in hierarchy.iter_vars() {
+        all_signals.push(var.full_name(hierarchy));
+    }
+    assert!(!all_signals.is_empty(), "Should find signals in recursive mode");
+
+    // Test non-recursive mode at top level (top scope)
+    let mut top_level_signals: Vec<String> = Vec::new();
+    for scope_ref in hierarchy.scopes() {
+        let scope = &hierarchy[scope_ref];
+        let scope_path = scope.full_name(hierarchy);
+        if scope_path == "top" {
+            // Top-level scope
+            for var_ref in scope.vars(hierarchy) {
+                let var = &hierarchy[var_ref];
+                top_level_signals.push(var.full_name(hierarchy));
+            }
+            break;
+        }
+    }
+    assert_eq!(top_level_signals.len(), 1, "Should find 1 signal at top level");
+    assert!(top_level_signals.contains(&"top.clk".to_string()), "Should find 'top.clk' at top level");
+
+    // Test non-recursive mode at submodule level
+    let mut submodule1_signals: Vec<String> = Vec::new();
+
+    if let Some(submodule1_ref) = waveform_mcp::find_scope_by_path(hierarchy, "top.submodule1") {
+        let submodule1 = &hierarchy[submodule1_ref];
+        for var_ref in submodule1.vars(hierarchy) {
+            let var = &hierarchy[var_ref];
+            submodule1_signals.push(var.full_name(hierarchy));
+        }
+    }
+
+    assert_eq!(submodule1_signals.len(), 1, "Should find 1 signal at submodule1 level");
+    assert!(
+        submodule1_signals.contains(&"top.submodule1.data1".to_string()),
+        "Should find 'data1' at submodule1 level"
+    );
+
+    // Verify that inner module signal is not included in submodule1 non-recursive list
+    assert!(
+        !submodule1_signals.iter().any(|s| s.contains("inner")),
+        "Should not include inner module signals in submodule1 non-recursive list"
+    );
+}
