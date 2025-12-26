@@ -343,27 +343,27 @@ fn parse_verilog_literal(s: &str) -> Result<Literal, String> {
 /// * `time_idx` - The time index to evaluate at
 ///
 /// # Returns
-/// `true` if condition evaluates to true, `false` otherwise.
+/// An i64 value where 0 = false and any non-zero value = true.
 fn evaluate_condition(
     condition: &Condition,
     waveform: &mut wellen::simple::Waveform,
     signal_cache: &std::collections::HashMap<String, wellen::SignalRef>,
     time_idx: usize,
-) -> Result<bool, String> {
+) -> Result<i64, String> {
     match condition {
         Condition::And(left, right) => {
             let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
             let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
-            Ok(left_val && right_val)
+            Ok(if left_val != 0 && right_val != 0 { 1 } else { 0 })
         }
         Condition::Or(left, right) => {
             let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
             let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
-            Ok(left_val || right_val)
+            Ok(if left_val != 0 || right_val != 0 { 1 } else { 0 })
         }
         Condition::Not(expr) => {
             let val = evaluate_condition(expr, waveform, signal_cache, time_idx)?;
-            Ok(!val)
+            Ok(if val != 0 { 0 } else { 1 })
         }
         Condition::Signal(path) => {
             // Get signal ref from cache
@@ -386,70 +386,27 @@ fn evaluate_condition(
                 .ok_or_else(|| format!("No data for signal {} at time index {}", path, time_idx))?;
 
             let signal_value = signal.get_value_at(&offset, 0);
-
-            // Evaluate as boolean: true if non-zero (for numeric values) or "1"/"true" (for string values)
-            Ok(is_signal_true(signal_value))
+            signal_value_to_i64(signal_value)
         }
         Condition::Eq(left, right) => {
-            let left_val = evaluate_condition_to_value(left, waveform, signal_cache, time_idx)?;
-            let right_val = evaluate_condition_to_value(right, waveform, signal_cache, time_idx)?;
-            Ok(left_val == right_val)
+            let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
+            let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
+            Ok(if left_val == right_val { 1 } else { 0 })
         }
         Condition::Neq(left, right) => {
-            let left_val = evaluate_condition_to_value(left, waveform, signal_cache, time_idx)?;
-            let right_val = evaluate_condition_to_value(right, waveform, signal_cache, time_idx)?;
-            Ok(left_val != right_val)
-        }
-        Condition::Literal(_) => Err("Literals must be used in comparisons".to_string()),
-        Condition::Past(expr) => {
-            // If at time 0, there's no previous value
-            if time_idx == 0 {
-                return Ok(false); // Skip evaluation when there's no past
-            }
-            // Evaluate expression at previous time index
-            evaluate_condition(expr, waveform, signal_cache, time_idx - 1)
-        }
-    }
-}
-
-/// Evaluate a condition to a signal value (for comparison purposes).
-fn evaluate_condition_to_value(
-    condition: &Condition,
-    waveform: &mut wellen::simple::Waveform,
-    signal_cache: &std::collections::HashMap<String, wellen::SignalRef>,
-    time_idx: usize,
-) -> Result<i64, String> {
-    match condition {
-        Condition::Signal(path) => {
-            let signal_ref = signal_cache
-                .get(path)
-                .ok_or_else(|| format!("Signal not found in cache: {}", path))?;
-
-            let signal = waveform
-                .get_signal(*signal_ref)
-                .ok_or_else(|| format!("Signal not found in waveform: {}", path))?;
-
-            let time_table_idx: wellen::TimeTableIdx = time_idx
-                .try_into()
-                .map_err(|_| format!("Time index {} too large", time_idx))?;
-
-            let offset = signal
-                .get_offset(time_table_idx)
-                .ok_or_else(|| format!("No data for signal {} at time index {}", path, time_idx))?;
-
-            let signal_value = signal.get_value_at(&offset, 0);
-            signal_value_to_i64(signal_value)
+            let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
+            let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
+            Ok(if left_val != right_val { 1 } else { 0 })
         }
         Condition::Literal(literal) => literal_to_i64(literal),
         Condition::Past(expr) => {
             // If at time 0, there's no previous value
             if time_idx == 0 {
-                return Err("No previous value at time index 0".to_string());
+                return Ok(0); // Return false (0) when there's no past
             }
             // Evaluate expression at previous time index
-            evaluate_condition_to_value(expr, waveform, signal_cache, time_idx - 1)
+            evaluate_condition(expr, waveform, signal_cache, time_idx - 1)
         }
-        _ => Err("Expected signal or literal in comparison".to_string()),
     }
 }
 
@@ -483,9 +440,17 @@ fn signal_value_to_i64(signal_value: wellen::SignalValue) -> Result<i64, String>
             }
             Ok(value)
         }
-        wellen::SignalValue::String(s) => s
-            .parse()
-            .map_err(|_| format!("Cannot convert string '{}' to integer", s)),
+        wellen::SignalValue::String(s) => {
+            // Handle special string values for boolean context
+            if s == "1" || s.eq_ignore_ascii_case("true") {
+                Ok(1)
+            } else if s == "0" || s.eq_ignore_ascii_case("false") {
+                Ok(0)
+            } else {
+                s.parse()
+                    .map_err(|_| format!("Cannot convert string '{}' to integer", s))
+            }
+        }
         wellen::SignalValue::Real(r) => Ok(r as i64),
         wellen::SignalValue::Event => Err("Event signal cannot be compared".to_string()),
     }
@@ -505,22 +470,6 @@ fn literal_to_i64(literal: &Literal) -> Result<i64, String> {
         }
         Literal::Decimal(v) => Ok(*v as i64),
         Literal::Hexadecimal(v) => Ok(*v as i64),
-    }
-}
-
-/// Check if a signal value is considered "true".
-///
-/// For binary/four-value/nine-value signals: true if any bit is set
-/// For string signals: true if value is "1" or "true"
-/// For real signals: true if value is non-zero
-fn is_signal_true(signal_value: wellen::SignalValue) -> bool {
-    match signal_value {
-        wellen::SignalValue::Binary(data, _) => data.iter().any(|&b| b != 0),
-        wellen::SignalValue::FourValue(data, _) => data.iter().any(|&b| b != 0),
-        wellen::SignalValue::NineValue(data, _) => data.iter().any(|&b| b != 0),
-        wellen::SignalValue::String(s) => s == "1" || s.eq_ignore_ascii_case("true"),
-        wellen::SignalValue::Real(r) => r != 0.0,
-        wellen::SignalValue::Event => false,
     }
 }
 
@@ -576,8 +525,8 @@ pub fn find_conditional_events(
     let end = end_idx.min(time_table.len().saturating_sub(1));
     for (idx, &time_value) in time_table[start_idx..=end].iter().enumerate() {
         let time_idx = start_idx + idx;
-        // Evaluate condition at this time index
-        if evaluate_condition(&condition_ast, waveform, &signal_cache, time_idx)? {
+        // Evaluate condition at this time index (0 = false, non-zero = true)
+        if evaluate_condition(&condition_ast, waveform, &signal_cache, time_idx)? != 0 {
             let formatted_time = format_time(time_value, timescale.as_ref());
 
             // Build event description with signal values

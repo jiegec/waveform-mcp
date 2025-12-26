@@ -1,6 +1,5 @@
 //! Condition tests
 
-use tempfile::NamedTempFile;
 use waveform_mcp::find_conditional_events;
 
 #[test]
