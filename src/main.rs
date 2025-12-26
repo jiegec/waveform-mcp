@@ -276,8 +276,15 @@ impl WaveformHandler {
             let time_value = time_table[time_idx];
             let formatted_time = format_time(time_value, timescale.as_ref());
 
+            let time_table_idx: wellen::TimeTableIdx = time_idx.try_into().map_err(|_| {
+                McpError::internal_error(
+                    format!("Time index {} exceeds maximum value", time_idx),
+                    None,
+                )
+            })?;
+
             let offset = signal
-                .get_offset(time_idx.try_into().unwrap())
+                .get_offset(time_table_idx)
                 .ok_or_else(|| {
                     McpError::internal_error(
                         "No data available for this time index".to_string(),
