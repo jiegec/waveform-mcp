@@ -415,6 +415,7 @@ enum Condition {
     Eq(Box<Condition>, Box<Condition>),
     Neq(Box<Condition>, Box<Condition>),
     Literal(Literal),
+    Past(Box<Condition>),
 }
 
 /// Parse a simple condition string into a Condition AST.
@@ -426,6 +427,7 @@ enum Condition {
 /// - `!` for NOT
 /// - `==` for equality comparison
 /// - `!=` for inequality comparison
+/// - `$past(signal)` to read signal value from previous time index
 /// - Parentheses for grouping
 /// - Verilog-style literals: 4'b0101, 3'd2, 5'h1A
 ///
@@ -499,6 +501,24 @@ fn tokenize_condition(condition: &str) -> Result<Vec<String>, String> {
                         current.clear();
                     }
                     tokens.push("!".to_string());
+                }
+            }
+            '$' => {
+                // Handle $past keyword
+                if i + 4 < chars.len() {
+                    let rest: String = chars[i + 1..i + 5].iter().collect();
+                    if rest == "past" {
+                        if !current.is_empty() {
+                            tokens.push(current.clone());
+                            current.clear();
+                        }
+                        tokens.push("$past".to_string());
+                        i += 4;
+                    } else {
+                        current.push(c);
+                    }
+                } else {
+                    current.push(c);
                 }
             }
             '(' | ')' => {
@@ -591,7 +611,7 @@ fn parse_not(tokens: &[String]) -> Result<(Condition, &[String]), String> {
     }
 }
 
-/// Parse a primary expression (signal, literal, or parenthesized expression).
+/// Parse a primary expression (signal, literal, $past(), or parenthesized expression).
 fn parse_primary(tokens: &[String]) -> Result<(Condition, &[String]), String> {
     if tokens.is_empty() {
         return Err("Unexpected end of tokens".to_string());
@@ -603,6 +623,37 @@ fn parse_primary(tokens: &[String]) -> Result<(Condition, &[String]), String> {
             return Err("Expected closing parenthesis".to_string());
         }
         Ok((expr, &rest[1..]))
+    } else if tokens.first() == Some(&"$past".to_string()) {
+        // Parse $past(expression)
+        if tokens.len() < 3 {
+            return Err("Expected expression and closing parenthesis after $past".to_string());
+        }
+        if tokens[1] != "(" {
+            return Err("Expected '(' after $past".to_string());
+        }
+        // Find matching closing parenthesis
+        let mut depth = 1;
+        let mut close_pos = 2;
+        while close_pos < tokens.len() && depth > 0 {
+            if tokens[close_pos] == "(" {
+                depth += 1;
+            } else if tokens[close_pos] == ")" {
+                depth -= 1;
+            }
+            if depth == 0 {
+                break;
+            }
+            close_pos += 1;
+        }
+        if depth != 0 {
+            return Err("Unmatched parentheses in $past expression".to_string());
+        }
+        // Parse inner expression (tokens[2..close_pos])
+        let (expr, rest) = parse_or(&tokens[2..close_pos])?;
+        if !rest.is_empty() {
+            return Err(format!("Unexpected tokens in $past(): {:?}", rest));
+        }
+        Ok((Condition::Past(Box::new(expr)), &tokens[close_pos + 1..]))
     } else {
         // Try to parse as literal first
         if let Ok(literal) = parse_verilog_literal(&tokens[0]) {
@@ -741,6 +792,14 @@ fn evaluate_condition(
             Ok(left_val != right_val)
         }
         Condition::Literal(_) => Err("Literals must be used in comparisons".to_string()),
+        Condition::Past(expr) => {
+            // If at time 0, there's no previous value
+            if time_idx == 0 {
+                return Ok(false); // Skip evaluation when there's no past
+            }
+            // Evaluate expression at previous time index
+            evaluate_condition(expr, waveform, signal_cache, time_idx - 1)
+        }
     }
 }
 
@@ -773,6 +832,14 @@ fn evaluate_condition_to_value(
             signal_value_to_i64(signal_value)
         }
         Condition::Literal(literal) => literal_to_i64(literal),
+        Condition::Past(expr) => {
+            // If at time 0, there's no previous value
+            if time_idx == 0 {
+                return Err("No previous value at time index 0".to_string());
+            }
+            // Evaluate expression at previous time index
+            evaluate_condition_to_value(expr, waveform, signal_cache, time_idx - 1)
+        }
         _ => Err("Expected signal or literal in comparison".to_string()),
     }
 }
@@ -974,6 +1041,9 @@ fn extract_signal_names_recursive(condition: &Condition, names: &mut Vec<String>
         }
         Condition::Literal(_) => {
             // Literals don't need to be loaded
+        }
+        Condition::Past(expr) => {
+            extract_signal_names_recursive(expr, names);
         }
     }
 }

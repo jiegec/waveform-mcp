@@ -306,7 +306,7 @@ impl WaveformHandler {
     }
 
     #[tool(
-        description = "Find events where a condition is satisfied. The condition uses signal paths with && (AND), || (OR), ! (NOT), == (equality), != (inequality), and parentheses. Supports Verilog-style literals: 4'b0101, 3'd2, 5'h1A. Examples: 'TOP.signal1 && TOP.signal2', 'TOP.counter == 4'b0101', 'TOP.state != 3'd2'. Optional: start_time_index, end_time_index, limit."
+        description = "Find events where a condition is satisfied. The condition uses signal paths with && (AND), || (OR), ! (NOT), == (equality), != (inequality), $past(), and parentheses. $past(signal) reads the signal value from the previous time index. Supports Verilog-style literals: 4'b0101, 3'd2, 5'h1A. Examples: 'TOP.signal1 && TOP.signal2', 'TOP.counter == 4'b0101', 'TOP.state != 3'd2', '!$past(TOP.m_aw_valid) && TOP.m_aw_valid'. Optional: start_time_index, end_time_index, limit."
     )]
     async fn find_conditional_events(
         &self,

@@ -955,3 +955,111 @@ $enddefinitions $end\n\
     let result = find_conditional_events(&mut waveform, "top.sig1 = 1", 0, 0, -1);
     assert!(result.is_err(), "Should fail for single =");
 }
+
+#[test]
+fn test_past_function() {
+    use waveform_mcp::find_conditional_events;
+
+    // Create a VCD file with a signal that toggles
+    // Signal pattern: 0 -> 1 -> 0 -> 1 -> 0
+    // Rising edges at time indices: 1 and 3
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 1 0 signal $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+00\n\
+#10\n\
+10\n\
+#20\n\
+00\n\
+#30\n\
+10\n\
+#40\n\
+00\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test rising edge detection: !$past(TOP.signal) && TOP.signal
+    let events = find_conditional_events(&mut waveform, "!$past(top.signal) && top.signal", 0, 4, -1)
+        .expect("Should find events for rising edge");
+
+    // Should find 2 rising edges at time indices 1 and 3
+    assert_eq!(events.len(), 2, "Should find 2 rising edges");
+    assert!(
+        events[0].contains("Time index 1 (10ns)"),
+        "First rising edge at time 1"
+    );
+    assert!(
+        events[1].contains("Time index 3 (30ns)"),
+        "Second rising edge at time 3"
+    );
+
+    // Test falling edge detection: $past(TOP.signal) && !TOP.signal
+    let events = find_conditional_events(&mut waveform, "$past(top.signal) && !top.signal", 0, 4, -1)
+        .expect("Should find events for falling edge");
+
+    // Should find 2 falling edges at time indices 2 and 4
+    assert_eq!(events.len(), 2, "Should find 2 falling edges");
+    assert!(
+        events[0].contains("Time index 2 (20ns)"),
+        "First falling edge at time 2"
+    );
+    assert!(
+        events[1].contains("Time index 4 (40ns)"),
+        "Second falling edge at time 4"
+    );
+
+    // Test $past with OR condition
+    // At time index 0: past=false (no past), current=0 => false || 0 = false
+    // At time index 1: past=0, current=1 => 0 || 1 = true
+    // At time index 2: past=1, current=0 => 1 || 0 = true
+    // At time index 3: past=0, current=1 => 0 || 1 = true
+    // At time index 4: past=1, current=0 => 1 || 0 = true
+    let events = find_conditional_events(&mut waveform, "$past(top.signal) || top.signal", 0, 4, -1)
+        .expect("Should find events for OR with $past");
+
+    assert_eq!(events.len(), 4, "Should find 4 events");
+}
+
+#[test]
+fn test_past_edge_case() {
+    use waveform_mcp::find_conditional_events;
+
+    // Create a simple VCD file
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 1 0 signal $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+00\n\
+#10\n\
+10\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test that $past at time index 0 evaluates to false (no past value)
+    // At time 0: past=false (no past value), signal=0 => false
+    // At time 1: past=0 (from time 0), signal=1 => 0=false
+    let events = find_conditional_events(&mut waveform, "$past(top.signal)", 0, 1, -1)
+        .expect("Should handle $past at time 0");
+
+    // Should find 0 events since past values are all 0 (false)
+    assert_eq!(events.len(), 0, "Should find 0 events");
+}
