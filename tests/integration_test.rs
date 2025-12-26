@@ -138,10 +138,35 @@ fn test_format_signal_value() {
     let event = wellen::SignalValue::Event;
     assert_eq!(format_signal_value(event), "Event");
 
-    // Test Binary
-    let binary_data: [u8; 2] = [1, 0];
+    // Test Binary (2-bit)
+    let binary_data: [u8; 1] = [2];
     let binary = wellen::SignalValue::Binary(&binary_data, 2);
-    assert_eq!(format_signal_value(binary), "[1, 0]");
+    assert_eq!(format_signal_value(binary), "2'b10");
+
+    // Test Binary (1-bit)
+    let binary_data1: [u8; 1] = [1];
+    let binary1 = wellen::SignalValue::Binary(&binary_data1, 1);
+    assert_eq!(format_signal_value(binary1), "1'b1");
+
+    // Test Binary (16-bit - should use hex)
+    let binary_data16: [u8; 2] = [0x55, 0x55];
+    let binary16 = wellen::SignalValue::Binary(&binary_data16, 16);
+    assert_eq!(format_signal_value(binary16), "16'h5555");
+
+    // Test Binary (8-bit - should use hex)
+    let binary_data8: [u8; 1] = [0xd];
+    let binary8 = wellen::SignalValue::Binary(&binary_data8, 8);
+    assert_eq!(format_signal_value(binary8), "8'h0d");
+
+    // Test Binary (8-bit - should use hex)
+    let binary_data8: [u8; 1] = [0xcd];
+    let binary8 = wellen::SignalValue::Binary(&binary_data8, 8);
+    assert_eq!(format_signal_value(binary8), "8'hcd");
+
+    // Test Binary (9-bit - should use hex)
+    let binary_data9: [u8; 2] = [0x1, 0xcd];
+    let binary9 = wellen::SignalValue::Binary(&binary_data9, 9);
+    assert_eq!(format_signal_value(binary9), "9'h1cd");
 
     // Test FourValue
     let four_data: [u8; 1] = [0];
@@ -389,10 +414,12 @@ $version Test VCD file $end\n\
 $timescale 1ns $end\n\
 $scope module top $end\n\
 $var wire 1 0 clk $end\n\
+$var wire 9 1 test $end\n\
 $upscope $end\n\
 $enddefinitions $end\n\
 #0\n\
 00\n\
+b100101011 1\n\
 #10\n\
 10\n\
 #20\n\
@@ -421,6 +448,21 @@ $enddefinitions $end\n\
     assert_eq!(values.len(), 4, "Should read 4 values");
     assert!(values[0].contains("0ns"), "First value should be at 0ns");
     assert!(values[1].contains("10ns"), "Second value should be at 10ns");
+
+    // Find the signal
+    let hierarchy = waveform.hierarchy();
+    let signal_ref = waveform_mcp::find_signal_by_path(hierarchy, "top.test")
+        .expect("Should find 'top.test' signal");
+
+    // Load the signal
+    waveform.load_signals(&[signal_ref]);
+
+    // Read values at different time indices
+    let values = read_signal_values(&waveform, signal_ref, &[0, 1, 2, 3])
+        .expect("Should read signal values");
+
+    assert_eq!(values.len(), 4, "Should read 4 values");
+    assert!(values[0].contains("9'h12b"), "First value should be 9'h12b");
 }
 
 #[test]
@@ -593,11 +635,11 @@ $enddefinitions $end\n\
     assert!(!events.is_empty(), "Should find at least one event");
     // Check that the event shows both signals as 1
     assert!(
-        events[0].contains("top.valid = [1]"),
+        events[0].contains("top.valid = 1'b1"),
         "Should show valid as 1"
     );
     assert!(
-        events[0].contains("top.ready = [1]"),
+        events[0].contains("top.ready = 1'b1"),
         "Should show ready as 1"
     );
     // Check timestamp - valid && ready is true only at time index 4 (40ns)
@@ -611,24 +653,55 @@ $enddefinitions $end\n\
         .expect("Should find events for OR condition");
     assert!(!events.is_empty(), "Should find at least one event");
     // Check timestamps - valid || ready is true at time indices 2, 3, 4, 5 (20ns, 30ns, 40ns, 50ns)
-    assert_eq!(events.len(), 4, "Should find 4 events where valid || ready is true");
-    assert!(events[0].contains("Time index 2 (20ns)"), "First event at time 2");
-    assert!(events[1].contains("Time index 3 (30ns)"), "Second event at time 3");
-    assert!(events[2].contains("Time index 4 (40ns)"), "Third event at time 4");
-    assert!(events[3].contains("Time index 5 (50ns)"), "Fourth event at time 5");
+    assert_eq!(
+        events.len(),
+        4,
+        "Should find 4 events where valid || ready is true"
+    );
+    assert!(
+        events[0].contains("Time index 2 (20ns)"),
+        "First event at time 2"
+    );
+    assert!(
+        events[1].contains("Time index 3 (30ns)"),
+        "Second event at time 3"
+    );
+    assert!(
+        events[2].contains("Time index 4 (40ns)"),
+        "Third event at time 4"
+    );
+    assert!(
+        events[3].contains("Time index 5 (50ns)"),
+        "Fourth event at time 5"
+    );
 
     // Test NOT condition
     let events = find_conditional_events(&mut waveform, "!top.clk", 0, 6, -1)
         .expect("Should find events for NOT condition");
     assert!(!events.is_empty(), "Should find at least one event");
-    assert!(events[0].contains("top.clk = [0]"), "Should show clk as 0");
+    assert!(events[0].contains("top.clk = 1'b0"), "Should show clk as 0");
     // Check timestamps - !clk is true at time indices 0, 3, 4, 5, 6 (0ns, 30ns, 40ns, 50ns, 60ns)
     assert_eq!(events.len(), 5, "Should find 5 events where !clk is true");
-    assert!(events[0].contains("Time index 0 (0ns)"), "First event at time 0");
-    assert!(events[1].contains("Time index 3 (30ns)"), "Second event at time 3");
-    assert!(events[2].contains("Time index 4 (40ns)"), "Third event at time 4");
-    assert!(events[3].contains("Time index 5 (50ns)"), "Fourth event at time 5");
-    assert!(events[4].contains("Time index 6 (60ns)"), "Fifth event at time 6");
+    assert!(
+        events[0].contains("Time index 0 (0ns)"),
+        "First event at time 0"
+    );
+    assert!(
+        events[1].contains("Time index 3 (30ns)"),
+        "Second event at time 3"
+    );
+    assert!(
+        events[2].contains("Time index 4 (40ns)"),
+        "Third event at time 4"
+    );
+    assert!(
+        events[3].contains("Time index 5 (50ns)"),
+        "Fourth event at time 5"
+    );
+    assert!(
+        events[4].contains("Time index 6 (60ns)"),
+        "Fifth event at time 6"
+    );
 
     // Test complex condition with parentheses
     let events = find_conditional_events(
@@ -641,8 +714,15 @@ $enddefinitions $end\n\
     .expect("Should find events for complex condition");
     assert!(!events.is_empty(), "Should find at least one event");
     // Check timestamps - clk && (valid || ready) is true only at time indices 2 (20ns)
-    assert_eq!(events.len(), 1, "Should find 2 events for complex condition");
-    assert!(events[0].contains("Time index 2 (20ns)"), "First event at time 2");
+    assert_eq!(
+        events.len(),
+        1,
+        "Should find 2 events for complex condition"
+    );
+    assert!(
+        events[0].contains("Time index 2 (20ns)"),
+        "First event at time 2"
+    );
 
     // Test limit
     let events = find_conditional_events(&mut waveform, "top.valid", 0, 6, 2)
@@ -654,7 +734,10 @@ $enddefinitions $end\n\
         .expect("Should find events in time range");
     assert!(!events.is_empty(), "Should find events in specified range");
     // Check timestamp - valid && ready at time 4 is within range 3-5
-    assert!(events[0].contains("Time index 4 (40ns)"), "Event should be at time index 4 (40ns)");
+    assert!(
+        events[0].contains("Time index 4 (40ns)"),
+        "Event should be at time index 4 (40ns)"
+    );
 }
 
 #[test]
@@ -692,25 +775,40 @@ b0110 !\n\
     let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
 
     // Test that events are found at correct timestamps
-    // counter == 2 (b0010) should be found at time index 2 (20ns)
+    // counter == 2 (4'h2) should be found at time index 2 (20ns)
     let events = find_conditional_events(&mut waveform, "top.counter == 4'b0010", 0, 6, -1)
         .expect("Should find events");
     assert_eq!(events.len(), 1, "Should find exactly 1 event");
-    assert!(events[0].contains("Time index 2 (20ns)"), "Event should be at time 2 (20ns)");
-    assert!(events[0].contains("top.counter = [2]"), "Should show counter = 2");
+    assert!(
+        events[0].contains("Time index 2 (20ns)"),
+        "Event should be at time 2 (20ns)"
+    );
+    assert!(
+        events[0].contains("top.counter = 4'b0010"),
+        "Should show counter = 2"
+    );
 
-    // counter == 5 (b0101) should be found at time index 5 (50ns)
+    // counter == 5 (4'h5) should be found at time index 5 (50ns)
     let events = find_conditional_events(&mut waveform, "top.counter == 4'b0101", 0, 6, -1)
         .expect("Should find events");
     assert_eq!(events.len(), 1, "Should find exactly 1 event");
-    assert!(events[0].contains("Time index 5 (50ns)"), "Event should be at time 5 (50ns)");
+    assert!(
+        events[0].contains("Time index 5 (50ns)"),
+        "Event should be at time 5 (50ns)"
+    );
 
     // counter != 0 should be found at time indices 1-6 (10ns-60ns)
     let events = find_conditional_events(&mut waveform, "top.counter != 4'b0000", 0, 6, -1)
         .expect("Should find events");
     assert_eq!(events.len(), 6, "Should find 6 events where counter != 0");
-    assert!(events[0].contains("Time index 1 (10ns)"), "First event at time 1");
-    assert!(events[5].contains("Time index 6 (60ns)"), "Last event at time 6");
+    assert!(
+        events[0].contains("Time index 1 (10ns)"),
+        "First event at time 1"
+    );
+    assert!(
+        events[5].contains("Time index 6 (60ns)"),
+        "Last event at time 6"
+    );
 }
 
 #[test]
@@ -783,8 +881,9 @@ b0110 !\n\
         .expect("Should find events for binary literal comparison");
     assert!(!events.is_empty(), "Should find at least one event");
     assert!(
-        events[0].contains("top.counter = [5]"),
-        "Should show counter value 5 (0b0101)"
+        events[0].contains("top.counter = 4'b0101"),
+        "Should show counter value 5 (4'b0101) {}",
+        events[0]
     );
 
     // Test equality with decimal literal
@@ -792,7 +891,7 @@ b0110 !\n\
         .expect("Should find events for decimal literal comparison");
     assert!(!events.is_empty(), "Should find at least one event");
     assert!(
-        events[0].contains("top.counter = [3]"),
+        events[0].contains("top.counter = 4'b0011"),
         "Should show counter value 3"
     );
 
@@ -801,7 +900,7 @@ b0110 !\n\
         .expect("Should find events for hex literal comparison");
     assert!(!events.is_empty(), "Should find at least one event");
     assert!(
-        events[0].contains("top.counter = [6]"),
+        events[0].contains("top.counter = 4'b0110"),
         "Should show counter value 6"
     );
 
