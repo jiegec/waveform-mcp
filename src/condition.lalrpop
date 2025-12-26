@@ -32,9 +32,9 @@ pub Primary: Condition = {
 };
 
 pub Literal: Literal = {
-    <s:r"[0-9]+'b[01_]+"> => crate::condition::parse_binary_literal(&s),
-    <s:r"[0-9]+'d[0-9_]+"> => crate::condition::parse_decimal_literal(&s),
-    <s:r"[0-9]+'h[0-9a-fA-F_]+"> => crate::condition::parse_hex_literal(&s),
+    <s:r"[0-9]+'b[01_]+"> => crate::condition::parse_binary_literal(s),
+    <s:r"[0-9]+'d[0-9_]+"> => crate::condition::parse_decimal_literal(s),
+    <s:r"[0-9]+'h[0-9a-fA-F_]+"> => crate::condition::parse_hex_literal(s),
 };
 
 Identifier: String = {
