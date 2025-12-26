@@ -867,10 +867,10 @@ pub fn find_conditional_events(
 
     // Scan through time indices
     let end = end_idx.min(time_table.len().saturating_sub(1));
-    for time_idx in start_idx..=end {
+    for (idx, &time_value) in time_table[start_idx..=end].iter().enumerate() {
+        let time_idx = start_idx + idx;
         // Evaluate condition at this time index
         if evaluate_condition(&condition_ast, waveform, &signal_cache, time_idx)? {
-            let time_value = time_table[time_idx];
             let formatted_time = format_time(time_value, timescale.as_ref());
 
             // Build event description with signal values
