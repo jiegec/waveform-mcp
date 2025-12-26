@@ -203,7 +203,11 @@ impl WaveformHandler {
 
         for time_idx in indices_to_read {
             if time_idx >= time_table.len() {
-                results.push(format!("Time index {} out of range (max: {})", time_idx, time_table.len() - 1));
+                results.push(format!(
+                    "Time index {} out of range (max: {})",
+                    time_idx,
+                    time_table.len() - 1
+                ));
                 continue;
             }
 
@@ -213,7 +217,10 @@ impl WaveformHandler {
             let offset = signal
                 .get_offset(time_idx.try_into().unwrap())
                 .ok_or_else(|| {
-                    McpError::internal_error("No data available for this time index".to_string(), None)
+                    McpError::internal_error(
+                        "No data available for this time index".to_string(),
+                        None,
+                    )
                 })?;
 
             let signal_value = signal.get_value_at(&offset, 0);
@@ -233,7 +240,9 @@ impl WaveformHandler {
             ));
         }
 
-        Ok(CallToolResult::success(vec![Content::text(results.join("\n"))]))
+        Ok(CallToolResult::success(vec![Content::text(
+            results.join("\n"),
+        )]))
     }
 
     #[tool(description = "Get metadata about a signal")]
@@ -316,7 +325,9 @@ impl WaveformHandler {
         let timescale = waveform.hierarchy().timescale();
 
         let start_idx = args.start_time_index.unwrap_or(0);
-        let end_idx = args.end_time_index.unwrap_or(time_table.len().saturating_sub(1));
+        let end_idx = args
+            .end_time_index
+            .unwrap_or(time_table.len().saturating_sub(1));
         let limit = args.limit.unwrap_or(usize::MAX);
 
         let signal = waveform.get_signal(signal_ref).ok_or_else(|| {

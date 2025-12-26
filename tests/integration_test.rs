@@ -44,9 +44,18 @@ b000000001";
     let hierarchy = waveform.hierarchy();
 
     // Debug: check what's in the hierarchy
-    println!("Hierarchy has {} top-level items", hierarchy.items().count());
-    println!("Hierarchy has {} vars (all levels)", hierarchy.vars().count());
-    println!("Hierarchy has {} scopes (all levels)", hierarchy.scopes().count());
+    println!(
+        "Hierarchy has {} top-level items",
+        hierarchy.items().count()
+    );
+    println!(
+        "Hierarchy has {} vars (all levels)",
+        hierarchy.vars().count()
+    );
+    println!(
+        "Hierarchy has {} scopes (all levels)",
+        hierarchy.scopes().count()
+    );
 
     // Check that we have signals
     let vars: Vec<_> = hierarchy.iter_vars().collect();
