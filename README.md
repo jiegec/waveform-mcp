@@ -44,63 +44,14 @@ The server provides 5 MCP tools:
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/jiegec/waveform-mcp
 cd waveform-mcp
 
 # Build the server
 cargo build --release
 ```
 
-The built binary will be at `target/release/waveform-mcp`.
-
-## Usage with MCP Clients
-
-### Claude Desktop
-
-Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS or `%APPDATA%/Claude/claude_desktop_config.json` on Windows):
-
-```json
-{
-  "mcpServers": {
-    "waveform": {
-      "command": "/path/to/waveform-mcp/target/release/waveform-mcp"
-    }
-  }
-}
-```
-
-### Manual Testing
-
-You can test the server manually using the provided example client:
-
-```bash
-# Build the server first
-cargo build
-
-# Run the example client
-python3 example_client.py
-```
-
-The example client demonstrates the complete MCP protocol flow:
-1. Initialize the connection
-2. List available tools
-3. Call a tool (open_waveform with dummy file)
-
-## Protocol Flow
-
-The MCP server follows the standard Model Context Protocol:
-
-1. Client sends `initialize` request
-2. Server responds with capabilities (including tools)
-3. Client sends `initialized` notification
-4. Client can now call `tools/list` and `tools/call`
-
-Example initialization sequence:
-```json
-{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"implementation": {"name": "test-client", "version": "1.0.0"}, "capabilities": {}}}
-{"jsonrpc": "2.0", "method": "initialized", "params": {}}
-{"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
-```
+The built binary will be at `target/release/waveform-mcp`. It uses STDIO for transport. Configure your MCP client accordingly.
 
 ## Development
 
@@ -125,13 +76,6 @@ cargo run
 ```
 
 The server uses stdio transport for MCP communication.
-
-## Dependencies
-
-- [wellen](https://crates.io/crates/wellen) - Waveform file parsing (VCD/FST)
-- [mcp-sdk-rs](https://crates.io/crates/mcp-sdk-rs) - MCP server implementation
-- [tokio](https://crates.io/crates/tokio) - Async runtime
-- [serde](https://crates.io/crates/serde) - Serialization
 
 ## License
 
