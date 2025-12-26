@@ -37,13 +37,44 @@ pub struct ListSignalsArgs {
 pub struct ReadSignalArgs {
     pub waveform_id: String,
     pub signal_path: String,
-    pub time_index: usize,
+    #[serde(default = "default_time_index")]
+    pub time_index: Option<usize>,
+    #[serde(default)]
+    pub time_indices: Option<Vec<usize>>,
+}
+
+fn default_time_index() -> Option<usize> {
+    None
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GetSignalInfoArgs {
     pub waveform_id: String,
     pub signal_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct FindSignalEventsArgs {
+    pub waveform_id: String,
+    pub signal_path: String,
+    #[serde(default = "default_start_time")]
+    pub start_time_index: Option<usize>,
+    #[serde(default = "default_end_time")]
+    pub end_time_index: Option<usize>,
+    #[serde(default = "default_limit")]
+    pub limit: Option<usize>,
+}
+
+fn default_start_time() -> Option<usize> {
+    None
+}
+
+fn default_end_time() -> Option<usize> {
+    None
+}
+
+fn default_limit() -> Option<usize> {
+    None
 }
 
 impl Default for WaveformHandler {
@@ -152,43 +183,57 @@ impl WaveformHandler {
 
         let time_table = waveform.time_table();
         let timescale = waveform.hierarchy().timescale();
-        if args.time_index >= time_table.len() {
-            return Ok(CallToolResult::error(vec![Content::text(format!(
-                "Time index {} out of range (max: {})",
-                args.time_index,
-                time_table.len() - 1
-            ))]));
-        }
 
-        let time_idx = args.time_index;
-        let time_value = time_table[time_idx];
-        let formatted_time = format_time(time_value, timescale.as_ref());
+        // Determine which time indices to read
+        let indices_to_read: Vec<usize> = if let Some(ref indices) = args.time_indices {
+            indices.clone()
+        } else if let Some(index) = args.time_index {
+            vec![index]
+        } else {
+            return Ok(CallToolResult::error(vec![Content::text(
+                "Either time_index or time_indices must be provided".to_string(),
+            )]));
+        };
 
         let signal = waveform.get_signal(signal_ref).ok_or_else(|| {
             McpError::internal_error("Signal not found after loading".to_string(), None)
         })?;
 
-        let offset = signal
-            .get_offset(time_idx.try_into().unwrap())
-            .ok_or_else(|| {
-                McpError::internal_error("No data available for this time index".to_string(), None)
-            })?;
+        let mut results = Vec::new();
 
-        let signal_value = signal.get_value_at(&offset, 0);
+        for time_idx in indices_to_read {
+            if time_idx >= time_table.len() {
+                results.push(format!("Time index {} out of range (max: {})", time_idx, time_table.len() - 1));
+                continue;
+            }
 
-        let value_str = match signal_value {
-            wellen::SignalValue::Event => "Event".to_string(),
-            wellen::SignalValue::Binary(data, _) => format!("{:?}", data),
-            wellen::SignalValue::FourValue(data, _) => format!("{:?}", data),
-            wellen::SignalValue::NineValue(data, _) => format!("{:?}", data),
-            wellen::SignalValue::String(s) => s.to_string(),
-            wellen::SignalValue::Real(r) => format!("{}", r),
-        };
+            let time_value = time_table[time_idx];
+            let formatted_time = format_time(time_value, timescale.as_ref());
 
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "Signal '{}' at time index {} ({}): {}",
-            args.signal_path, args.time_index, formatted_time, value_str
-        ))]))
+            let offset = signal
+                .get_offset(time_idx.try_into().unwrap())
+                .ok_or_else(|| {
+                    McpError::internal_error("No data available for this time index".to_string(), None)
+                })?;
+
+            let signal_value = signal.get_value_at(&offset, 0);
+
+            let value_str = match signal_value {
+                wellen::SignalValue::Event => "Event".to_string(),
+                wellen::SignalValue::Binary(data, _) => format!("{:?}", data),
+                wellen::SignalValue::FourValue(data, _) => format!("{:?}", data),
+                wellen::SignalValue::NineValue(data, _) => format!("{:?}", data),
+                wellen::SignalValue::String(s) => s.to_string(),
+                wellen::SignalValue::Real(r) => format!("{}", r),
+            };
+
+            results.push(format!(
+                "Signal '{}' at time index {} ({}): {}",
+                args.signal_path, time_idx, formatted_time, value_str
+            ));
+        }
+
+        Ok(CallToolResult::success(vec![Content::text(results.join("\n"))]))
     }
 
     #[tool(description = "Get metadata about a signal")]
@@ -226,14 +271,99 @@ impl WaveformHandler {
 
         let var = &hierarchy[var_ref];
 
+        let width_info = match var.length() {
+            Some(len) => format!("{} bits", len),
+            None => "variable length (string/real)".to_string(),
+        };
+
+        let index_info = match var.index() {
+            Some(idx) => format!("[{}:{}]", idx.msb(), idx.lsb()),
+            None => "N/A".to_string(),
+        };
+
         let info = format!(
-            "Signal: {}\nType: {:?}\nSignal index: {}",
+            "Signal: {}\nType: {:?}\nWidth: {}\nIndex: {}",
             args.signal_path,
             var.var_type(),
-            var_ref.index()
+            width_info,
+            index_info
         );
 
         Ok(CallToolResult::success(vec![Content::text(info)]))
+    }
+
+    #[tool(description = "Find events (changes) of a signal within a specified time range")]
+    async fn find_signal_events(
+        &self,
+        args: Parameters<FindSignalEventsArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let args = &args.0;
+        let mut waveforms = self.waveforms.write().await;
+
+        let waveform = waveforms.get_mut(&args.waveform_id).ok_or_else(|| {
+            McpError::invalid_params(format!("Waveform not found: {}", args.waveform_id), None)
+        })?;
+
+        let hierarchy = waveform.hierarchy();
+        let signal_ref = find_signal_by_path(hierarchy, &args.signal_path).ok_or_else(|| {
+            McpError::invalid_params(format!("Signal not found: {}", args.signal_path), None)
+        })?;
+
+        // Load the signal data
+        waveform.load_signals(&[signal_ref]);
+
+        let time_table = waveform.time_table();
+        let timescale = waveform.hierarchy().timescale();
+
+        let start_idx = args.start_time_index.unwrap_or(0);
+        let end_idx = args.end_time_index.unwrap_or(time_table.len().saturating_sub(1));
+        let limit = args.limit.unwrap_or(usize::MAX);
+
+        let signal = waveform.get_signal(signal_ref).ok_or_else(|| {
+            McpError::internal_error("Signal not found after loading".to_string(), None)
+        })?;
+
+        let mut events = Vec::new();
+
+        for (time_idx, signal_value) in signal.iter_changes() {
+            let time_idx = time_idx as usize;
+
+            // Check if within time range
+            if time_idx < start_idx || time_idx > end_idx {
+                continue;
+            }
+
+            // Check limit
+            if events.len() >= limit {
+                break;
+            }
+
+            let time_value = time_table[time_idx];
+            let formatted_time = format_time(time_value, timescale.as_ref());
+
+            let value_str = match signal_value {
+                wellen::SignalValue::Event => "Event".to_string(),
+                wellen::SignalValue::Binary(data, _) => format!("{:?}", data),
+                wellen::SignalValue::FourValue(data, _) => format!("{:?}", data),
+                wellen::SignalValue::NineValue(data, _) => format!("{:?}", data),
+                wellen::SignalValue::String(s) => s.to_string(),
+                wellen::SignalValue::Real(r) => format!("{}", r),
+            };
+
+            events.push(format!(
+                "Time index {} ({}): {}",
+                time_idx, formatted_time, value_str
+            ));
+        }
+
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "Found {} events for signal '{}' (time range: {} to {}):\n{}",
+            events.len(),
+            args.signal_path,
+            start_idx,
+            end_idx,
+            events.join("\n")
+        ))]))
     }
 }
 
@@ -246,7 +376,7 @@ impl ServerHandler for WaveformHandler {
             server_info: Implementation::from_build_env(),
             instructions: Some(
                 "MCP server for reading VCD/FST waveform files using the wellen library. \
-                Available tools: open_waveform, list_signals, read_signal, get_signal_info."
+                Available tools: open_waveform, list_signals, read_signal, get_signal_info, find_signal_events."
                     .to_string(),
             ),
         }
