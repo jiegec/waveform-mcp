@@ -1,0 +1,478 @@
+//! Condition tests
+
+use tempfile::NamedTempFile;
+use waveform_mcp::find_conditional_events;
+
+#[test]
+fn test_find_conditional_events_lib() {
+    // Create a VCD file with multiple signals
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 1 0 clk $end\n\
+$var wire 1 1 valid $end\n\
+$var wire 1 2 ready $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+00\n\
+01\n\
+02\n\
+#10\n\
+10\n\
+01\n\
+02\n\
+#20\n\
+10\n\
+11\n\
+02\n\
+#30\n\
+00\n\
+11\n\
+02\n\
+#40\n\
+00\n\
+11\n\
+12\n\
+#50\n\
+00\n\
+01\n\
+12\n\
+#60\n\
+00\n\
+01\n\
+02\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test simple AND condition - use valid time range (0-6 for 7 time points)
+    let events = find_conditional_events(&mut waveform, "top.valid && top.ready", 0, 6, -1)
+        .expect("Should find events for AND condition");
+    assert!(!events.is_empty(), "Should find at least one event");
+    // Check that event shows both signals as 1
+    assert!(
+        events[0].contains("top.valid = 1'b1"),
+        "Should show valid as 1"
+    );
+    assert!(
+        events[0].contains("top.ready = 1'b1"),
+        "Should show ready as 1"
+    );
+    // Check timestamp - valid && ready is true only at time index 4 (40ns)
+    assert!(
+        events[0].contains("Time index 4 (40ns)"),
+        "Event should be at time index 4 (40ns)"
+    );
+
+    // Test OR condition
+    let events = find_conditional_events(&mut waveform, "top.valid || top.ready", 0, 6, -1)
+        .expect("Should find events for OR condition");
+    assert!(!events.is_empty(), "Should find at least one event");
+    // Check timestamps - valid || ready is true at time indices 2, 3, 4, 5 (20ns, 30ns, 40ns, 50ns)
+    assert_eq!(
+        events.len(),
+        4,
+        "Should find 4 events where valid || ready is true"
+    );
+    assert!(
+        events[0].contains("Time index 2 (20ns)"),
+        "First event at time 2"
+    );
+    assert!(
+        events[1].contains("Time index 3 (30ns)"),
+        "Second event at time 3"
+    );
+    assert!(
+        events[2].contains("Time index 4 (40ns)"),
+        "Third event at time 4"
+    );
+    assert!(
+        events[3].contains("Time index 5 (50ns)"),
+        "Fourth event at time 5"
+    );
+
+    // Test NOT condition
+    let events = find_conditional_events(&mut waveform, "!top.clk", 0, 6, -1)
+        .expect("Should find events for NOT condition");
+    assert!(!events.is_empty(), "Should find at least one event");
+    assert!(events[0].contains("top.clk = 1'b0"), "Should show clk as 0");
+    // Check timestamps - !clk is true at time indices 0, 3, 4, 5, 6 (0ns, 30ns, 40ns, 50ns, 60ns)
+    assert_eq!(events.len(), 5, "Should find 5 events where !clk is true");
+    assert!(
+        events[0].contains("Time index 0 (0ns)"),
+        "First event at time 0"
+    );
+    assert!(
+        events[1].contains("Time index 3 (30ns)"),
+        "Second event at time 3"
+    );
+    assert!(
+        events[2].contains("Time index 4 (40ns)"),
+        "Third event at time 4"
+    );
+    assert!(
+        events[3].contains("Time index 5 (50ns)"),
+        "Fourth event at time 5"
+    );
+    assert!(
+        events[4].contains("Time index 6 (60ns)"),
+        "Fifth event at time 6"
+    );
+
+    // Test complex condition with parentheses
+    let events = find_conditional_events(
+        &mut waveform,
+        "top.clk && (top.valid || top.ready)",
+        0,
+        6,
+        -1,
+    )
+    .expect("Should find events for complex condition");
+    assert!(!events.is_empty(), "Should find at least one event");
+    // Check timestamps - clk && (valid || ready) is true only at time indices 2 (20ns)
+    assert_eq!(
+        events.len(),
+        1,
+        "Should find 2 events for complex condition"
+    );
+    assert!(
+        events[0].contains("Time index 2 (20ns)"),
+        "First event at time 2"
+    );
+
+    // Test limit
+    let events = find_conditional_events(&mut waveform, "top.valid", 0, 6, 2)
+        .expect("Should find events with limit");
+    assert_eq!(events.len(), 2, "Should limit to 2 events");
+
+    // Test time range
+    let events = find_conditional_events(&mut waveform, "top.valid && top.ready", 3, 5, -1)
+        .expect("Should find events in time range");
+    assert!(!events.is_empty(), "Should find events in specified range");
+    // Check timestamp - valid && ready at time 4 is within range 3-5
+    assert!(
+        events[0].contains("Time index 4 (40ns)"),
+        "Event should be at time index 4 (40ns)"
+    );
+}
+
+#[test]
+fn test_conditional_events_timestamps() {
+    // Create a VCD file with a counter that increments each time step
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 4 ! counter $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+b0000 !\n\
+#10\n\
+b0001 !\n\
+#20\n\
+b0010 !\n\
+#30\n\
+b0011 !\n\
+#40\n\
+b0100 !\n\
+#50\n\
+b0101 !\n\
+#60\n\
+b0110 !\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test that events are found at correct timestamps
+    // counter == 2 (4'h2) should be found at time index 2 (20ns)
+    let events = find_conditional_events(&mut waveform, "top.counter == 4'b0010", 0, 6, -1)
+        .expect("Should find events");
+    assert_eq!(events.len(), 1, "Should find exactly 1 event");
+    assert!(
+        events[0].contains("Time index 2 (20ns)"),
+        "Event should be at time 2 (20ns)"
+    );
+    assert!(
+        events[0].contains("top.counter = 4'b0010"),
+        "Should show counter = 2"
+    );
+
+    // counter == 5 (4'h5) should be found at time index 5 (50ns)
+    let events = find_conditional_events(&mut waveform, "top.counter == 4'b0101", 0, 6, -1)
+        .expect("Should find events");
+    assert_eq!(events.len(), 1, "Should find exactly 1 event");
+    assert!(
+        events[0].contains("Time index 5 (50ns)"),
+        "Event should be at time 5 (50ns)"
+    );
+
+    // counter != 0 should be found at time indices 1-6 (10ns-60ns)
+    let events = find_conditional_events(&mut waveform, "top.counter != 4'b0000", 0, 6, -1)
+        .expect("Should find events");
+    assert_eq!(events.len(), 6, "Should find 6 events where counter != 0");
+    assert!(
+        events[0].contains("Time index 1 (10ns)"),
+        "First event at time 1"
+    );
+    assert!(
+        events[5].contains("Time index 6 (60ns)"),
+        "Last event at time 6"
+    );
+}
+
+#[test]
+fn test_parse_condition() {
+    // Test basic parsing by calling find_conditional_events with invalid condition
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 1 0 sig1 $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+00\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test invalid signal name
+    let result = find_conditional_events(&mut waveform, "nonexistent.signal", 0, 0, -1);
+    assert!(result.is_err(), "Should fail for nonexistent signal");
+
+    // Test invalid syntax (unclosed parenthesis)
+    let result = find_conditional_events(&mut waveform, "(top.sig1 && top.sig1", 0, 0, -1);
+    assert!(result.is_err(), "Should fail for invalid syntax");
+}
+
+#[test]
+fn test_comparison_operators() {
+    // Create a VCD file with a counter signal
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 4 ! counter $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+b0000 !\n\
+#10\n\
+b0001 !\n\
+#20\n\
+b0010 !\n\
+#30\n\
+b0011 !\n\
+#40\n\
+b0100 !\n\
+#50\n\
+b0101 !\n\
+#60\n\
+b0110 !\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test equality with binary literal
+    let events = find_conditional_events(&mut waveform, "top.counter == 4'b0101", 0, 6, -1)
+        .expect("Should find events for binary literal comparison");
+    assert!(!events.is_empty(), "Should find at least one event");
+    assert!(
+        events[0].contains("top.counter = 4'b0101"),
+        "Should show counter value 5 (4'b0101) {}",
+        events[0]
+    );
+
+    // Test equality with decimal literal
+    let events = find_conditional_events(&mut waveform, "top.counter == 3'd3", 0, 6, -1)
+        .expect("Should find events for decimal literal comparison");
+    assert!(!events.is_empty(), "Should find at least one event");
+    assert!(
+        events[0].contains("top.counter = 4'b0011"),
+        "Should show counter value 3"
+    );
+
+    // Test equality with hex literal
+    let events = find_conditional_events(&mut waveform, "top.counter == 4'h6", 0, 6, -1)
+        .expect("Should find events for hex literal comparison");
+    assert!(!events.is_empty(), "Should find at least one event");
+    assert!(
+        events[0].contains("top.counter = 4'b0110"),
+        "Should show counter value 6"
+    );
+
+    // Test inequality
+    let events = find_conditional_events(&mut waveform, "top.counter != 4'b0000", 0, 6, -1)
+        .expect("Should find events for inequality comparison");
+    assert!(!events.is_empty(), "Should find at least one event");
+
+    // Test complex condition with comparison
+    let events = find_conditional_events(
+        &mut waveform,
+        "top.counter == 4'b0101 || top.counter == 4'b0011",
+        0,
+        6,
+        -1,
+    )
+    .expect("Should find events for complex comparison");
+    assert_eq!(
+        events.len(),
+        2,
+        "Should find 2 events matching either condition"
+    );
+}
+
+#[test]
+fn test_verilog_literal_parsing() {
+    // Test invalid literal format
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 1 0 sig1 $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+00\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test invalid literal format
+    let result = find_conditional_events(&mut waveform, "top.sig1 == invalid", 0, 0, -1);
+    assert!(result.is_err(), "Should fail for invalid literal format");
+
+    // Test single = (should be ==)
+    let result = find_conditional_events(&mut waveform, "top.sig1 = 1", 0, 0, -1);
+    assert!(result.is_err(), "Should fail for single =");
+}
+
+#[test]
+fn test_past_function() {
+    // Create a VCD file with a signal that toggles
+    // Signal pattern: 0 -> 1 -> 0 -> 1 -> 0
+    // Rising edges at time indices: 1 and 3
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 1 0 signal $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+00\n\
+#10\n\
+10\n\
+#20\n\
+00\n\
+#30\n\
+10\n\
+#40\n\
+00\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test rising edge detection: !$past(TOP.signal) && TOP.signal
+    let events =
+        find_conditional_events(&mut waveform, "!$past(top.signal) && top.signal", 0, 4, -1)
+            .expect("Should find events for rising edge");
+
+    // Should find 2 rising edges at time indices 1 and 3
+    assert_eq!(events.len(), 2, "Should find 2 rising edges");
+    assert!(
+        events[0].contains("Time index 1 (10ns)"),
+        "First rising edge at time 1"
+    );
+    assert!(
+        events[1].contains("Time index 3 (30ns)"),
+        "Second rising edge at time 3"
+    );
+
+    // Test falling edge detection: $past(TOP.signal) && !TOP.signal
+    let events =
+        find_conditional_events(&mut waveform, "$past(top.signal) && !top.signal", 0, 4, -1)
+            .expect("Should find events for falling edge");
+
+    // Should find 2 falling edges at time indices 2 and 4
+    assert_eq!(events.len(), 2, "Should find 2 falling edges");
+    assert!(
+        events[0].contains("Time index 2 (20ns)"),
+        "First falling edge at time 2"
+    );
+    assert!(
+        events[1].contains("Time index 4 (40ns)"),
+        "Second falling edge at time 4"
+    );
+
+    // Test $past with OR condition
+    // At time index 0: past=false (no past), current=0 => false || 0 = false
+    // At time index 1: past=0, current=1 => 0 || 1 = true
+    // At time index 2: past=1, current=0 => 1 || 0 = true
+    // At time index 3: past=0, current=1 => 0 || 1 = true
+    // At time index 4: past=1, current=0 => 1 || 0 = true
+    let events =
+        find_conditional_events(&mut waveform, "$past(top.signal) || top.signal", 0, 4, -1)
+            .expect("Should find events for OR with $past");
+
+    assert_eq!(events.len(), 4, "Should find 4 events");
+}
+
+#[test]
+fn test_past_edge_case() {
+    // Create a simple VCD file
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 1 0 signal $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+00\n\
+#10\n\
+10\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test that $past at time index 0 evaluates to false (no past value)
+    // At time 0: past=false (no past value), signal=0 => false
+    // At time 1: past=0 (from time 0), signal=1 => 0=false
+    let events = find_conditional_events(&mut waveform, "$past(top.signal)", 0, 1, -1)
+        .expect("Should handle $past at time 0");
+
+    // Should find 0 events since past values are all 0 (false)
+    assert_eq!(events.len(), 0, "Should find 0 events");
+}
