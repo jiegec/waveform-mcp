@@ -1,3 +1,7 @@
+use clap::Parser;
+use rmcp::transport::streamable_http_server::{
+    session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
+};
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::*,
@@ -10,10 +14,25 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
+use tracing_subscriber::prelude::*;
 use waveform_mcp::{
     find_conditional_events, find_signal_by_path, find_signal_events, get_signal_metadata,
     list_signals, read_signal_values,
 };
+
+/// Command line arguments for the waveform MCP server
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Run the server in HTTP mode instead of stdio
+    #[arg(long)]
+    http: bool,
+
+    /// Bind address for HTTP server (default: 127.0.0.1:8000)
+    #[arg(long, default_value = "127.0.0.1:8000")]
+    bind_address: String,
+}
 
 // Waveform store - using RwLock for interior mutability
 type WaveformStore = Arc<RwLock<HashMap<String, wellen::simple::Waveform>>>;
@@ -121,8 +140,12 @@ impl Default for WaveformHandler {
 #[tool_router]
 impl WaveformHandler {
     pub fn new() -> Self {
+        Self::with_store(Arc::new(RwLock::new(HashMap::new())))
+    }
+
+    pub fn with_store(waveforms: WaveformStore) -> Self {
         Self {
-            waveforms: Arc::new(RwLock::new(HashMap::new())),
+            waveforms,
             tool_router: Self::tool_router(),
         }
     }
@@ -357,18 +380,56 @@ impl ServerHandler for WaveformHandler {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
+async fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "debug".to_string().into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let handler = WaveformHandler::new();
+    if args.http {
+        // HTTP mode
+        let ct = CancellationToken::new();
 
-    let service = handler.serve(stdio()).await.inspect_err(|e| {
-        tracing::error!("Serving error: {:?}", e);
-    })?;
+        // Create a shared waveform store for all HTTP sessions
+        let shared_waveforms: WaveformStore = Arc::new(RwLock::new(HashMap::new()));
 
-    service.waiting().await?;
+        let service = StreamableHttpService::new(
+            move || Ok(WaveformHandler::with_store(shared_waveforms.clone())),
+            LocalSessionManager::default().into(),
+            StreamableHttpServerConfig {
+                cancellation_token: ct.child_token(),
+                ..Default::default()
+            },
+        );
+
+        let router = axum::Router::new().nest_service("/mcp", service);
+        let tcp_listener = tokio::net::TcpListener::bind(&args.bind_address).await?;
+        tracing::info!("HTTP server listening on {}", args.bind_address);
+
+        let _ = axum::serve(tcp_listener, router)
+            .with_graceful_shutdown(async move {
+                tokio::signal::ctrl_c().await.unwrap();
+                tracing::info!("Shutting down...");
+                ct.cancel();
+            })
+            .await;
+    } else {
+        // stdio mode (default)
+        let handler = WaveformHandler::new();
+
+        let service = handler.serve(stdio()).await.inspect_err(|e| {
+            tracing::error!("Serving error: {:?}", e);
+        })?;
+
+        tracing::info!("Server running in stdio mode");
+
+        service.waiting().await?;
+    }
 
     Ok(())
 }
