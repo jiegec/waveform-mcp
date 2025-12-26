@@ -52,7 +52,7 @@ pub fn format_time(time_value: u64, timescale: Option<&wellen::Timescale>) -> St
 pub fn format_signal_value(signal_value: wellen::SignalValue) -> String {
     match signal_value {
         wellen::SignalValue::Event => "Event".to_string(),
-        wellen::SignalValue::Binary(data, bits) => format_binary_verilog(&data, bits),
+        wellen::SignalValue::Binary(data, bits) => format_binary_verilog(data, bits),
         wellen::SignalValue::FourValue(data, _) => format!("{:?}", data),
         wellen::SignalValue::NineValue(data, _) => format!("{:?}", data),
         wellen::SignalValue::String(s) => s.to_string(),
@@ -79,7 +79,7 @@ fn format_binary_verilog(data: &[u8], bits: u32) -> String {
 
     // For longer signals, use hex format
     // Convert bytes to hex representation
-    let hex_chars = (bits as usize + 3) / 4; // Number of hex characters needed
+    let hex_chars = (bits as usize).div_ceil(4); // Number of hex characters needed
     let full_hex: String = data.iter().map(|b| format!("{:02x}", b)).collect();
     if hex_chars % 2 == 1 {
         format!("{}'h{}", bits, &full_hex[1..])
