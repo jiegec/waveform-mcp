@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use waveform_mcp::format_time;
+use waveform_mcp::{find_signal_by_path, format_signal_value, format_time};
 
 // Waveform store - using RwLock for interior mutability
 type WaveformStore = Arc<RwLock<HashMap<String, wellen::simple::Waveform>>>;
@@ -252,15 +252,7 @@ impl WaveformHandler {
                 })?;
 
             let signal_value = signal.get_value_at(&offset, 0);
-
-            let value_str = match signal_value {
-                wellen::SignalValue::Event => "Event".to_string(),
-                wellen::SignalValue::Binary(data, _) => format!("{:?}", data),
-                wellen::SignalValue::FourValue(data, _) => format!("{:?}", data),
-                wellen::SignalValue::NineValue(data, _) => format!("{:?}", data),
-                wellen::SignalValue::String(s) => s.to_string(),
-                wellen::SignalValue::Real(r) => format!("{}", r),
-            };
+            let value_str = format_signal_value(signal_value);
 
             results.push(format!(
                 "Signal '{}' at time index {} ({}): {}",
@@ -379,15 +371,7 @@ impl WaveformHandler {
 
             let time_value = time_table[time_idx];
             let formatted_time = format_time(time_value, timescale.as_ref());
-
-            let value_str = match signal_value {
-                wellen::SignalValue::Event => "Event".to_string(),
-                wellen::SignalValue::Binary(data, _) => format!("{:?}", data),
-                wellen::SignalValue::FourValue(data, _) => format!("{:?}", data),
-                wellen::SignalValue::NineValue(data, _) => format!("{:?}", data),
-                wellen::SignalValue::String(s) => s.to_string(),
-                wellen::SignalValue::Real(r) => format!("{}", r),
-            };
+            let value_str = format_signal_value(signal_value);
 
             events.push(format!(
                 "Time index {} ({}): {}",
@@ -420,16 +404,6 @@ impl ServerHandler for WaveformHandler {
             ),
         }
     }
-}
-
-fn find_signal_by_path(hierarchy: &wellen::Hierarchy, path: &str) -> Option<wellen::SignalRef> {
-    for var in hierarchy.iter_vars() {
-        let signal_path = var.full_name(hierarchy);
-        if signal_path == path {
-            return Some(var.signal_ref());
-        }
-    }
-    None
 }
 
 #[tokio::main]

@@ -37,3 +37,39 @@ pub fn format_time(time_value: u64, timescale: Option<&wellen::Timescale>) -> St
         None => format!("{} (unknown timescale)", time_value),
     }
 }
+
+/// Format a signal value into a human-readable string.
+///
+/// # Arguments
+/// * `signal_value` - The signal value to format
+///
+/// # Returns
+/// A string representation of the signal value.
+pub fn format_signal_value(signal_value: wellen::SignalValue) -> String {
+    match signal_value {
+        wellen::SignalValue::Event => "Event".to_string(),
+        wellen::SignalValue::Binary(data, _) => format!("{:?}", data),
+        wellen::SignalValue::FourValue(data, _) => format!("{:?}", data),
+        wellen::SignalValue::NineValue(data, _) => format!("{:?}", data),
+        wellen::SignalValue::String(s) => s.to_string(),
+        wellen::SignalValue::Real(r) => format!("{}", r),
+    }
+}
+
+/// Find a signal by its hierarchical path in the waveform hierarchy.
+///
+/// # Arguments
+/// * `hierarchy` - The waveform hierarchy to search
+/// * `path` - The hierarchical path to the signal (e.g., "top.module.signal")
+///
+/// # Returns
+/// `Some(SignalRef)` if the signal is found, `None` otherwise.
+pub fn find_signal_by_path(hierarchy: &wellen::Hierarchy, path: &str) -> Option<wellen::SignalRef> {
+    for var in hierarchy.iter_vars() {
+        let signal_path = var.full_name(hierarchy);
+        if signal_path == path {
+            return Some(var.signal_ref());
+        }
+    }
+    None
+}

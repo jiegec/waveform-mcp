@@ -131,6 +131,74 @@ b000000001";
 }
 
 #[test]
+fn test_format_signal_value() {
+    use waveform_mcp::format_signal_value;
+
+    // Test Event
+    let event = wellen::SignalValue::Event;
+    assert_eq!(format_signal_value(event), "Event");
+
+    // Test Binary
+    let binary_data: [u8; 2] = [1, 0];
+    let binary = wellen::SignalValue::Binary(&binary_data, 2);
+    assert_eq!(format_signal_value(binary), "[1, 0]");
+
+    // Test FourValue
+    let four_data: [u8; 1] = [0];
+    let four = wellen::SignalValue::FourValue(&four_data, 1);
+    assert_eq!(format_signal_value(four), "[0]");
+
+    // Test NineValue
+    let nine_data: [u8; 1] = [0];
+    let nine = wellen::SignalValue::NineValue(&nine_data, 1);
+    assert_eq!(format_signal_value(nine), "[0]");
+
+    // Test String
+    let string = wellen::SignalValue::String("test");
+    assert_eq!(format_signal_value(string), "test");
+
+    // Test Real
+    let real = wellen::SignalValue::Real(3.15);
+    assert_eq!(format_signal_value(real), "3.15");
+}
+
+#[test]
+fn test_find_signal_by_path() {
+    use waveform_mcp::find_signal_by_path;
+
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 1 ! clk $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+0!";
+
+    let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    write!(temp_file, "{}", vcd_content).expect("Failed to write VCD content");
+    temp_file.flush().expect("Failed to flush");
+
+    let waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+    let hierarchy = waveform.hierarchy();
+
+    // Debug: print all available signals
+    for var in hierarchy.iter_vars() {
+        println!("Signal path: {}", var.full_name(hierarchy));
+    }
+
+    // Test finding existing signal - use the correct path format
+    let result = find_signal_by_path(hierarchy, "top.clk");
+    assert!(result.is_some(), "Should find 'top.clk' signal");
+
+    // Test finding non-existing signal
+    let result = find_signal_by_path(hierarchy, "nonexistent");
+    assert!(result.is_none(), "Should not find 'nonexistent' signal");
+}
+
+#[test]
 fn test_format_time() {
     use waveform_mcp::format_time;
 
