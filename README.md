@@ -10,6 +10,7 @@ An MCP (Model Context Protocol) server for reading and analyzing waveform files 
 - Get signal metadata (type, width, index range)
 - Find signal events (changes) within a time range
 - Format time values with timescale information (e.g., "10ns", "5000ps")
+- Streamable HTTP server support for remote access
 
 ## Tools
 
@@ -95,11 +96,22 @@ cargo test
 ### Running
 
 ```bash
-# Run the server directly (for testing with stdio)
+# Run the server with stdio transport (default)
 cargo run
+
+# Run the server in HTTP mode
+cargo run -- --http
+
+# Run the server in HTTP mode with custom bind address
+cargo run -- --http --bind-address 0.0.0.0:8000
 ```
 
-The server uses stdio transport for MCP communication.
+The server supports two transport modes:
+
+- **Stdio mode** (default): Uses standard input/output for MCP communication
+- **HTTP mode**: Uses streamable HTTP server for remote access at `/mcp` endpoint
+
+When running in HTTP mode, the server listens on the specified bind address (default: `127.0.0.1:8000`). HTTP mode allows the waveform store to be shared across multiple HTTP sessions, enabling remote analysis of waveform files.
 
 ## License
 
