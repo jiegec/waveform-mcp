@@ -117,12 +117,54 @@ fn find_scope_by_path_recursive(
     None
 }
 
+/// Collect signals from a scope and optionally its children recursively.
+fn collect_signals_from_scope(
+    hierarchy: &wellen::Hierarchy,
+    scope_ref: wellen::ScopeRef,
+    recursive: bool,
+    name_pattern: Option<&str>,
+) -> Vec<String> {
+    let mut signals = Vec::new();
+    let scope = &hierarchy[scope_ref];
+
+    // Collect variables directly in this scope
+    for var_ref in scope.vars(hierarchy) {
+        let var = &hierarchy[var_ref];
+        let path = var.full_name(hierarchy);
+
+        // Apply name pattern filter if provided
+        if let Some(pattern) = name_pattern {
+            let pattern_lower = pattern.to_lowercase();
+            let path_lower = path.to_lowercase();
+            if !path_lower.contains(&pattern_lower) {
+                continue;
+            }
+        }
+
+        signals.push(path);
+    }
+
+    // If recursive, also collect from child scopes
+    if recursive {
+        for child_ref in scope.scopes(hierarchy) {
+            signals.extend(collect_signals_from_scope(
+                hierarchy,
+                child_ref,
+                true,
+                name_pattern,
+            ));
+        }
+    }
+
+    signals
+}
+
 /// List signals in a waveform hierarchy with optional filtering.
 ///
 /// # Arguments
 /// * `hierarchy` - The waveform hierarchy to search
 /// * `name_pattern` - Optional case-insensitive substring filter for signal names
-/// * `hierarchy_prefix` - Optional hierarchy path prefix to filter signals
+/// * `hierarchy_prefix` - Optional hierarchy path prefix to filter signals (must match a scope)
 /// * `recursive` - If true, list all signals recursively; if false, only list signals at the specified level
 /// * `limit` - Optional maximum number of signals to return
 ///
@@ -137,52 +179,22 @@ pub fn list_signals(
 ) -> Vec<String> {
     let mut signals = Vec::new();
 
-    if recursive {
-        // Recursive mode: iterate all variables at all levels
-        for var in hierarchy.iter_vars() {
-            let path = var.full_name(hierarchy);
-
-            // Apply name pattern filter if provided
-            if let Some(pattern) = name_pattern {
-                let pattern_lower = pattern.to_lowercase();
-                let path_lower = path.to_lowercase();
-                if !path_lower.contains(&pattern_lower) {
-                    continue;
-                }
-            }
-
-            // Apply hierarchy prefix filter if provided
-            if let Some(prefix) = hierarchy_prefix {
-                if !path.starts_with(prefix) {
-                    continue;
-                }
-            }
-
-            signals.push(path);
+    if let Some(prefix) = hierarchy_prefix {
+        // Find the scope by path
+        if let Some(scope_ref) = find_scope_by_path(hierarchy, prefix) {
+            // Collect signals from this scope (and children if recursive)
+            signals = collect_signals_from_scope(hierarchy, scope_ref, recursive, name_pattern);
         }
+        // If scope not found, return empty signals
     } else {
-        // Non-recursive mode: only variables at the specified level
-        let target_prefix = hierarchy_prefix.unwrap_or("");
-
-        if let Some(scope_ref) = find_scope_by_path(hierarchy, target_prefix) {
-            let scope = &hierarchy[scope_ref];
-
-            // Get only variables directly in this scope
-            for var_ref in scope.vars(hierarchy) {
-                let var = &hierarchy[var_ref];
-                let path = var.full_name(hierarchy);
-
-                // Apply name pattern filter if provided
-                if let Some(pattern) = name_pattern {
-                    let pattern_lower = pattern.to_lowercase();
-                    let path_lower = path.to_lowercase();
-                    if !path_lower.contains(&pattern_lower) {
-                        continue;
-                    }
-                }
-
-                signals.push(path);
-            }
+        // No hierarchy prefix - start from top-level scopes
+        for scope_ref in hierarchy.scopes() {
+            signals.extend(collect_signals_from_scope(
+                hierarchy,
+                scope_ref,
+                recursive,
+                name_pattern,
+            ));
         }
     }
 
