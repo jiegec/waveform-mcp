@@ -39,12 +39,16 @@ pub struct ListSignalsArgs {
     pub hierarchy_prefix: Option<String>,
     #[serde(default = "default_recursive")]
     pub recursive: Option<bool>,
-    #[serde(default = "default_limit")]
-    pub limit: Option<usize>,
+    #[serde(default = "default_list_signals_limit")]
+    pub limit: Option<isize>,
 }
 
 fn default_recursive() -> Option<bool> {
     Some(false)
+}
+
+fn default_list_signals_limit() -> Option<isize> {
+    Some(100)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -75,8 +79,8 @@ pub struct FindSignalEventsArgs {
     pub start_time_index: Option<usize>,
     #[serde(default = "default_end_time")]
     pub end_time_index: Option<usize>,
-    #[serde(default = "default_limit")]
-    pub limit: Option<usize>,
+    #[serde(default = "default_find_signal_events_limit")]
+    pub limit: Option<isize>,
 }
 
 fn default_start_time() -> Option<usize> {
@@ -87,7 +91,7 @@ fn default_end_time() -> Option<usize> {
     None
 }
 
-fn default_limit() -> Option<usize> {
+fn default_find_signal_events_limit() -> Option<isize> {
     Some(100)
 }
 
@@ -269,7 +273,7 @@ impl WaveformHandler {
         let end_idx = args
             .end_time_index
             .unwrap_or(time_table.len().saturating_sub(1));
-        let limit = args.limit.unwrap_or(usize::MAX);
+        let limit = args.limit.unwrap_or(-1);
 
         let events = find_signal_events(waveform, signal_ref, start_idx, end_idx, limit)
             .map_err(|e| McpError::internal_error(e, None))?;

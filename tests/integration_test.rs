@@ -368,6 +368,14 @@ $enddefinitions $end\n\
     // Test limit
     let limited_signals = list_signals(hierarchy, None, None, true, Some(2));
     assert_eq!(limited_signals.len(), 2, "Should limit to 2 signals");
+
+    // Test unlimited limit (-1)
+    let unlimited_signals = list_signals(hierarchy, None, None, true, Some(-1));
+    assert_eq!(
+        unlimited_signals.len(),
+        3,
+        "Should return all signals with -1 limit"
+    );
 }
 
 #[test]
@@ -511,8 +519,8 @@ $enddefinitions $end\n\
     waveform.load_signals(&[signal_ref]);
 
     // Find all events
-    let events = find_signal_events(&waveform, signal_ref, 0, 10, usize::MAX)
-        .expect("Should find signal events");
+    let events =
+        find_signal_events(&waveform, signal_ref, 0, 10, -1).expect("Should find signal events");
     assert!(!events.is_empty(), "Should find at least one event");
 
     // Find events with limit
@@ -521,8 +529,8 @@ $enddefinitions $end\n\
     assert_eq!(limited_events.len(), 2, "Should limit to 2 events");
 
     // Find events in a specific time range
-    let range_events = find_signal_events(&waveform, signal_ref, 2, 3, usize::MAX)
-        .expect("Should find events in range");
+    let range_events =
+        find_signal_events(&waveform, signal_ref, 2, 3, -1).expect("Should find events in range");
     assert!(
         !range_events.is_empty(),
         "Should find events in specified range"

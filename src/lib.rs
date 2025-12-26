@@ -166,7 +166,7 @@ fn collect_signals_from_scope(
 /// * `name_pattern` - Optional case-insensitive substring filter for signal names
 /// * `hierarchy_prefix` - Optional hierarchy path prefix to filter signals (must match a scope)
 /// * `recursive` - If true, list all signals recursively; if false, only list signals at the specified level
-/// * `limit` - Optional maximum number of signals to return
+/// * `limit` - Optional maximum number of signals to return. Use -1 for unlimited.
 ///
 /// # Returns
 /// A vector of signal paths.
@@ -175,7 +175,7 @@ pub fn list_signals(
     name_pattern: Option<&str>,
     hierarchy_prefix: Option<&str>,
     recursive: bool,
-    limit: Option<usize>,
+    limit: Option<isize>,
 ) -> Vec<String> {
     let mut signals = Vec::new();
 
@@ -198,9 +198,11 @@ pub fn list_signals(
         }
     }
 
-    // Apply limit if provided
+    // Apply limit if provided and not -1 (unlimited)
     if let Some(limit) = limit {
-        signals.truncate(limit);
+        if limit >= 0 {
+            signals.truncate(limit as usize);
+        }
     }
 
     signals
@@ -318,7 +320,7 @@ pub fn get_signal_metadata(
 /// * `signal_ref` - The signal reference to analyze
 /// * `start_idx` - Starting time index (inclusive)
 /// * `end_idx` - Ending time index (inclusive)
-/// * `limit` - Maximum number of events to return
+/// * `limit` - Maximum number of events to return. Use -1 for unlimited.
 ///
 /// # Returns
 /// A vector of formatted event strings, or an error if the operation fails.
@@ -327,7 +329,7 @@ pub fn find_signal_events(
     signal_ref: wellen::SignalRef,
     start_idx: usize,
     end_idx: usize,
-    limit: usize,
+    limit: isize,
 ) -> Result<Vec<String>, String> {
     let time_table = waveform.time_table();
     let timescale = waveform.hierarchy().timescale();
@@ -346,8 +348,8 @@ pub fn find_signal_events(
             continue;
         }
 
-        // Check limit
-        if events.len() >= limit {
+        // Check limit (unless unlimited with -1)
+        if limit >= 0 && events.len() >= limit as usize {
             break;
         }
 
