@@ -11,7 +11,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use waveform_mcp::{
-    find_signal_by_path, find_signal_events, get_signal_metadata, list_signals, read_signal_values,
+    find_conditional_events, find_signal_by_path, find_signal_events, get_signal_metadata,
+    list_signals, read_signal_values,
 };
 
 // Waveform store - using RwLock for interior mutability
@@ -92,6 +93,22 @@ fn default_end_time() -> Option<usize> {
 }
 
 fn default_find_signal_events_limit() -> Option<isize> {
+    Some(100)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct FindConditionalEventsArgs {
+    pub waveform_id: String,
+    pub condition: String,
+    #[serde(default = "default_start_time")]
+    pub start_time_index: Option<usize>,
+    #[serde(default = "default_end_time")]
+    pub end_time_index: Option<usize>,
+    #[serde(default = "default_find_conditional_events_limit")]
+    pub limit: Option<isize>,
+}
+
+fn default_find_conditional_events_limit() -> Option<isize> {
     Some(100)
 }
 
@@ -287,6 +304,46 @@ impl WaveformHandler {
             events.join("\n")
         ))]))
     }
+
+    #[tool(
+        description = "Find events where a condition is satisfied. The condition uses signal paths with && (AND), || (OR), ! (NOT), and parentheses. Example: 'TOP.signal1 && TOP.signal2'. Optional: start_time_index, end_time_index, limit."
+    )]
+    async fn find_conditional_events(
+        &self,
+        args: Parameters<FindConditionalEventsArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let args = &args.0;
+        let mut waveforms = self.waveforms.write().await;
+
+        let waveform = waveforms.get_mut(&args.waveform_id).ok_or_else(|| {
+            McpError::invalid_params(format!("Waveform not found: {}", args.waveform_id), None)
+        })?;
+
+        let time_table = waveform.time_table();
+        let start_idx = args.start_time_index.unwrap_or(0);
+        let end_idx = args
+            .end_time_index
+            .unwrap_or(time_table.len().saturating_sub(1));
+        let limit = args.limit.unwrap_or(-1);
+
+        let events = find_conditional_events(
+            waveform,
+            &args.condition,
+            start_idx,
+            end_idx,
+            limit,
+        )
+        .map_err(|e| McpError::invalid_params(e, None))?;
+
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "Found {} events for condition '{}' (time range: {} to {}):\n{}",
+            events.len(),
+            args.condition,
+            start_idx,
+            end_idx,
+            events.join("\n")
+        ))]))
+    }
 }
 
 #[tool_handler]
@@ -298,7 +355,7 @@ impl ServerHandler for WaveformHandler {
             server_info: Implementation::from_build_env(),
             instructions: Some(
                 "MCP server for reading VCD/FST waveform files using the wellen library. \
-                Available tools: open_waveform, list_signals, read_signal, get_signal_info, find_signal_events."
+                Available tools: open_waveform, list_signals, read_signal, get_signal_info, find_signal_events, find_conditional_events."
                     .to_string(),
             ),
         }

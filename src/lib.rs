@@ -365,3 +365,360 @@ pub fn find_signal_events(
 
     Ok(events)
 }
+
+/// Condition for finding events based on signal values.
+#[derive(Debug, Clone)]
+enum Condition {
+    And(Box<Condition>, Box<Condition>),
+    Or(Box<Condition>, Box<Condition>),
+    Not(Box<Condition>),
+    Signal(String),
+}
+
+/// Parse a simple condition string into a Condition AST.
+///
+/// Supports:
+/// - Signal paths (e.g., "TOP.signal")
+/// - `&&` for AND
+/// - `||` for OR
+/// - `!` for NOT
+/// - Parentheses for grouping
+///
+/// This is a prototype implementation for common operations.
+fn parse_condition(condition: &str) -> Result<Condition, String> {
+    let tokens = tokenize_condition(condition);
+    let (ast, rest) = parse_or(&tokens)?;
+    if !rest.is_empty() {
+        return Err(format!("Unexpected tokens at end of condition: {:?}", rest));
+    }
+    Ok(ast)
+}
+
+/// Tokenize a condition string into tokens.
+fn tokenize_condition(condition: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let chars: Vec<char> = condition.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        let c = chars[i];
+        match c {
+            '&' => {
+                if i + 1 < chars.len() && chars[i + 1] == '&' {
+                    if !current.is_empty() {
+                        tokens.push(current.clone());
+                        current.clear();
+                    }
+                    tokens.push("&&".to_string());
+                    i += 1;
+                } else {
+                    current.push(c);
+                }
+            }
+            '|' => {
+                if i + 1 < chars.len() && chars[i + 1] == '|' {
+                    if !current.is_empty() {
+                        tokens.push(current.clone());
+                        current.clear();
+                    }
+                    tokens.push("||".to_string());
+                    i += 1;
+                } else {
+                    current.push(c);
+                }
+            }
+            '!' => {
+                if !current.is_empty() {
+                    tokens.push(current.clone());
+                    current.clear();
+                }
+                tokens.push("!".to_string());
+            }
+            '(' | ')' => {
+                if !current.is_empty() {
+                    tokens.push(current.clone());
+                    current.clear();
+                }
+                tokens.push(c.to_string());
+            }
+            ' ' | '\t' => {
+                if !current.is_empty() {
+                    tokens.push(current.clone());
+                    current.clear();
+                }
+            }
+            _ => {
+                current.push(c);
+            }
+        }
+        i += 1;
+    }
+
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+
+    tokens
+}
+
+/// Parse an OR expression (lowest precedence).
+fn parse_or(tokens: &[String]) -> Result<(Condition, &[String]), String> {
+    let (mut left, mut rest) = parse_and(tokens)?;
+    while !rest.is_empty() {
+        if rest.get(0) == Some(&"||".to_string()) {
+            rest = &rest[1..];
+            let (right, new_rest) = parse_and(rest)?;
+            left = Condition::Or(Box::new(left), Box::new(right));
+            rest = new_rest;
+        } else {
+            break;
+        }
+    }
+    Ok((left, rest))
+}
+
+/// Parse an AND expression.
+fn parse_and(tokens: &[String]) -> Result<(Condition, &[String]), String> {
+    let (mut left, mut rest) = parse_not(tokens)?;
+    while !rest.is_empty() {
+        if rest.get(0) == Some(&"&&".to_string()) {
+            rest = &rest[1..];
+            let (right, new_rest) = parse_not(rest)?;
+            left = Condition::And(Box::new(left), Box::new(right));
+            rest = new_rest;
+        } else {
+            break;
+        }
+    }
+    Ok((left, rest))
+}
+
+/// Parse a NOT expression.
+fn parse_not(tokens: &[String]) -> Result<(Condition, &[String]), String> {
+    if tokens.get(0) == Some(&"!".to_string()) {
+        let (expr, rest) = parse_not(&tokens[1..])?;
+        Ok((Condition::Not(Box::new(expr)), rest))
+    } else {
+        parse_primary(tokens)
+    }
+}
+
+/// Parse a primary expression (signal or parenthesized expression).
+fn parse_primary(tokens: &[String]) -> Result<(Condition, &[String]), String> {
+    if tokens.is_empty() {
+        return Err("Unexpected end of tokens".to_string());
+    }
+
+    if tokens.get(0) == Some(&"(".to_string()) {
+        let (expr, rest) = parse_or(&tokens[1..])?;
+        if rest.get(0) != Some(&")".to_string()) {
+            return Err("Expected closing parenthesis".to_string());
+        }
+        Ok((expr, &rest[1..]))
+    } else {
+        // Must be a signal name
+        let signal_name = tokens[0].clone();
+        Ok((Condition::Signal(signal_name), &tokens[1..]))
+    }
+}
+
+/// Evaluate a condition at a specific time index.
+///
+/// # Arguments
+/// * `condition` - The condition to evaluate
+/// * `waveform` - The waveform to read from
+/// * `signal_cache` - Cache of signal references and loaded signals
+/// * `time_idx` - The time index to evaluate at
+///
+/// # Returns
+/// `true` if the condition evaluates to true, `false` otherwise.
+fn evaluate_condition(
+    condition: &Condition,
+    waveform: &mut wellen::simple::Waveform,
+    signal_cache: &std::collections::HashMap<String, wellen::SignalRef>,
+    time_idx: usize,
+) -> Result<bool, String> {
+    match condition {
+        Condition::And(left, right) => {
+            let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
+            let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
+            Ok(left_val && right_val)
+        }
+        Condition::Or(left, right) => {
+            let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
+            let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
+            Ok(left_val || right_val)
+        }
+        Condition::Not(expr) => {
+            let val = evaluate_condition(expr, waveform, signal_cache, time_idx)?;
+            Ok(!val)
+        }
+        Condition::Signal(path) => {
+            // Get signal ref from cache
+            let signal_ref = signal_cache.get(path).ok_or_else(|| {
+                format!("Signal not found in cache: {}", path)
+            })?;
+
+            // Get signal from waveform
+            let signal = waveform.get_signal(*signal_ref).ok_or_else(|| {
+                format!("Signal not found in waveform: {}", path)
+            })?;
+
+            // Get value at time index
+            let time_table_idx: wellen::TimeTableIdx = time_idx.try_into()
+                .map_err(|_| format!("Time index {} too large", time_idx))?;
+
+            let offset = signal.get_offset(time_table_idx).ok_or_else(|| {
+                format!("No data for signal {} at time index {}", path, time_idx)
+            })?;
+
+            let signal_value = signal.get_value_at(&offset, 0);
+
+            // Evaluate as boolean: true if non-zero (for numeric values) or "1"/"true" (for string values)
+            Ok(is_signal_true(signal_value))
+        }
+    }
+}
+
+/// Check if a signal value is considered "true".
+///
+/// For binary/four-value/nine-value signals: true if any bit is set
+/// For string signals: true if value is "1" or "true"
+/// For real signals: true if value is non-zero
+fn is_signal_true(signal_value: wellen::SignalValue) -> bool {
+    match signal_value {
+        wellen::SignalValue::Binary(data, _) => {
+            data.iter().any(|&b| b != 0)
+        }
+        wellen::SignalValue::FourValue(data, _) => {
+            data.iter().any(|&b| b != 0)
+        }
+        wellen::SignalValue::NineValue(data, _) => {
+            data.iter().any(|&b| b != 0)
+        }
+        wellen::SignalValue::String(s) => {
+            s == "1" || s.eq_ignore_ascii_case("true")
+        }
+        wellen::SignalValue::Real(r) => r != 0.0,
+        wellen::SignalValue::Event => false,
+    }
+}
+
+/// Find events where a condition is satisfied.
+///
+/// # Arguments
+/// * `waveform` - The waveform to read from (must have signals loaded)
+/// * `condition` - The condition to evaluate (e.g., "TOP.signal1 && TOP.signal2")
+/// * `start_idx` - Starting time index (inclusive)
+/// * `end_idx` - Ending time index (inclusive)
+/// * `limit` - Maximum number of events to return. Use -1 for unlimited.
+///
+/// # Returns
+/// A vector of formatted event strings, or an error if the operation fails.
+pub fn find_conditional_events(
+    waveform: &mut wellen::simple::Waveform,
+    condition: &str,
+    start_idx: usize,
+    end_idx: usize,
+    limit: isize,
+) -> Result<Vec<String>, String> {
+    // Get timescale before any mutable operations
+    let timescale = waveform.hierarchy().timescale().clone();
+
+    // Parse condition
+    let condition_ast = parse_condition(condition)?;
+
+    // Extract all signal names from the condition
+    let signal_names = extract_signal_names(&condition_ast);
+
+    // Find and load all signals
+    let mut signal_cache = std::collections::HashMap::new();
+    for signal_name in &signal_names {
+        let signal_ref = {
+            let hierarchy = waveform.hierarchy();
+            find_signal_by_path(hierarchy, signal_name)
+                .ok_or_else(|| format!("Signal not found: {}", signal_name))?
+        };
+
+        // Load the signal
+        let signal_refs = vec![signal_ref];
+        waveform.load_signals(&signal_refs);
+
+        signal_cache.insert(signal_name.clone(), signal_ref);
+    }
+
+    // Get time table after loading signals
+    let time_table: Vec<wellen::Time> = waveform.time_table().to_vec();
+
+    let mut events = Vec::new();
+
+    // Scan through time indices
+    for time_idx in start_idx..=end_idx.min(time_table.len().saturating_sub(1)) {
+        // Evaluate condition at this time index
+        if evaluate_condition(&condition_ast, waveform, &signal_cache, time_idx)? {
+            let time_value = time_table[time_idx];
+            let formatted_time = format_time(time_value, timescale.as_ref());
+
+            // Build event description with signal values
+            let mut signal_values = Vec::new();
+            for signal_name in &signal_names {
+                if let Some(signal_ref) = signal_cache.get(signal_name) {
+                    if let Some(signal) = waveform.get_signal(*signal_ref) {
+                        let time_table_idx: wellen::TimeTableIdx = time_idx.try_into()
+                            .map_err(|_| format!("Time index {} too large", time_idx))?;
+
+                        if let Some(offset) = signal.get_offset(time_table_idx) {
+                            let signal_value = signal.get_value_at(&offset, 0);
+                            let value_str = format_signal_value(signal_value);
+                            signal_values.push(format!("{} = {}", signal_name, value_str));
+                        }
+                    }
+                }
+            }
+
+            events.push(format!(
+                "Time index {} ({}): {}",
+                time_idx,
+                formatted_time,
+                signal_values.join(", ")
+            ));
+        }
+
+        // Check limit
+        if limit >= 0 && events.len() >= limit as usize {
+            break;
+        }
+    }
+
+    Ok(events)
+}
+
+/// Extract all signal names from a condition AST.
+fn extract_signal_names(condition: &Condition) -> Vec<String> {
+    let mut names = Vec::new();
+    extract_signal_names_recursive(condition, &mut names);
+    names
+}
+
+fn extract_signal_names_recursive(condition: &Condition, names: &mut Vec<String>) {
+    match condition {
+        Condition::And(left, right) => {
+            extract_signal_names_recursive(left, names);
+            extract_signal_names_recursive(right, names);
+        }
+        Condition::Or(left, right) => {
+            extract_signal_names_recursive(left, names);
+            extract_signal_names_recursive(right, names);
+        }
+        Condition::Not(expr) => {
+            extract_signal_names_recursive(expr, names);
+        }
+        Condition::Signal(path) => {
+            if !names.contains(path) {
+                names.push(path.clone());
+            }
+        }
+    }
+}
+

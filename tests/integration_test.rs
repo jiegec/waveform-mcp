@@ -536,3 +536,131 @@ $enddefinitions $end\n\
         "Should find events in specified range"
     );
 }
+
+#[test]
+fn test_find_conditional_events_lib() {
+    use waveform_mcp::find_conditional_events;
+
+    // Create a VCD file with multiple signals
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 1 0 clk $end\n\
+$var wire 1 1 valid $end\n\
+$var wire 1 2 ready $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+00\n\
+01\n\
+02\n\
+#10\n\
+10\n\
+01\n\
+02\n\
+#20\n\
+10\n\
+11\n\
+02\n\
+#30\n\
+00\n\
+11\n\
+02\n\
+#40\n\
+00\n\
+11\n\
+12\n\
+#50\n\
+00\n\
+01\n\
+12\n\
+#60\n\
+00\n\
+01\n\
+02\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test simple AND condition - use valid time range (0-6 for 7 time points)
+    let events = find_conditional_events(&mut waveform, "top.valid && top.ready", 0, 6, -1)
+        .expect("Should find events for AND condition");
+    assert!(!events.is_empty(), "Should find at least one event");
+    // Check that the event shows both signals as 1
+    assert!(
+        events[0].contains("top.valid = [1]"),
+        "Should show valid as 1"
+    );
+    assert!(
+        events[0].contains("top.ready = [1]"),
+        "Should show ready as 1"
+    );
+
+    // Test OR condition
+    let events = find_conditional_events(&mut waveform, "top.valid || top.ready", 0, 6, -1)
+        .expect("Should find events for OR condition");
+    assert!(!events.is_empty(), "Should find at least one event");
+
+    // Test NOT condition
+    let events = find_conditional_events(&mut waveform, "!top.clk", 0, 6, -1)
+        .expect("Should find events for NOT condition");
+    assert!(!events.is_empty(), "Should find at least one event");
+    assert!(events[0].contains("top.clk = [0]"), "Should show clk as 0");
+
+    // Test complex condition with parentheses
+    let events = find_conditional_events(
+        &mut waveform,
+        "top.clk && (top.valid || top.ready)",
+        0,
+        6,
+        -1,
+    )
+    .expect("Should find events for complex condition");
+    assert!(!events.is_empty(), "Should find at least one event");
+
+    // Test limit
+    let events = find_conditional_events(&mut waveform, "top.valid", 0, 6, 2)
+        .expect("Should find events with limit");
+    assert_eq!(events.len(), 2, "Should limit to 2 events");
+
+    // Test time range
+    let events = find_conditional_events(&mut waveform, "top.valid && top.ready", 3, 5, -1)
+        .expect("Should find events in time range");
+    assert!(!events.is_empty(), "Should find events in specified range");
+}
+
+#[test]
+fn test_parse_condition() {
+    use waveform_mcp::find_conditional_events;
+
+    // Test basic parsing by calling find_conditional_events with invalid condition
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 1 0 sig1 $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+00\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test invalid signal name
+    let result = find_conditional_events(&mut waveform, "nonexistent.signal", 0, 0, -1);
+    assert!(result.is_err(), "Should fail for nonexistent signal");
+
+    // Test invalid syntax (unclosed parenthesis)
+    let result = find_conditional_events(&mut waveform, "(top.sig1 && top.sig1", 0, 0, -1);
+    assert!(result.is_err(), "Should fail for invalid syntax");
+}
