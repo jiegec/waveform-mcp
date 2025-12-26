@@ -265,7 +265,10 @@ $enddefinitions $end\n\
     for var in hierarchy.iter_vars() {
         all_signals.push(var.full_name(hierarchy));
     }
-    assert!(!all_signals.is_empty(), "Should find signals in recursive mode");
+    assert!(
+        !all_signals.is_empty(),
+        "Should find signals in recursive mode"
+    );
 
     // Test non-recursive mode at top level (top scope)
     let mut top_level_signals: Vec<String> = Vec::new();
@@ -281,8 +284,15 @@ $enddefinitions $end\n\
             break;
         }
     }
-    assert_eq!(top_level_signals.len(), 1, "Should find 1 signal at top level");
-    assert!(top_level_signals.contains(&"top.clk".to_string()), "Should find 'top.clk' at top level");
+    assert_eq!(
+        top_level_signals.len(),
+        1,
+        "Should find 1 signal at top level"
+    );
+    assert!(
+        top_level_signals.contains(&"top.clk".to_string()),
+        "Should find 'top.clk' at top level"
+    );
 
     // Test non-recursive mode at submodule level
     let mut submodule1_signals: Vec<String> = Vec::new();
@@ -295,7 +305,11 @@ $enddefinitions $end\n\
         }
     }
 
-    assert_eq!(submodule1_signals.len(), 1, "Should find 1 signal at submodule1 level");
+    assert_eq!(
+        submodule1_signals.len(),
+        1,
+        "Should find 1 signal at submodule1 level"
+    );
     assert!(
         submodule1_signals.contains(&"top.submodule1.data1".to_string()),
         "Should find 'data1' at submodule1 level"
@@ -342,7 +356,10 @@ $enddefinitions $end\n\
     // Test filtering by name pattern
     let clk_signals = list_signals(hierarchy, Some("clk"), None, true, None);
     assert_eq!(clk_signals.len(), 1, "Should find 1 signal matching 'clk'");
-    assert!(clk_signals[0].contains("clk"), "Signal should contain 'clk'");
+    assert!(
+        clk_signals[0].contains("clk"),
+        "Signal should contain 'clk'"
+    );
 
     // Test filtering by hierarchy prefix
     let top_signals = list_signals(hierarchy, None, Some("top"), true, None);
@@ -424,20 +441,35 @@ b0000 1";
     let hierarchy = waveform.hierarchy();
 
     // Test getting metadata for a 1-bit signal
-    let clk_metadata = get_signal_metadata(hierarchy, "top.clk")
-        .expect("Should get metadata for 'top.clk'");
-    assert!(clk_metadata.contains("top.clk"), "Metadata should contain signal name");
-    assert!(clk_metadata.contains("1 bits"), "Metadata should show 1 bit width");
+    let clk_metadata =
+        get_signal_metadata(hierarchy, "top.clk").expect("Should get metadata for 'top.clk'");
+    assert!(
+        clk_metadata.contains("top.clk"),
+        "Metadata should contain signal name"
+    );
+    assert!(
+        clk_metadata.contains("1 bits"),
+        "Metadata should show 1 bit width"
+    );
 
     // Test getting metadata for a 4-bit signal
-    let data_metadata = get_signal_metadata(hierarchy, "top.data")
-        .expect("Should get metadata for 'top.data'");
-    assert!(data_metadata.contains("top.data"), "Metadata should contain signal name");
-    assert!(data_metadata.contains("4 bits"), "Metadata should show 4 bit width");
+    let data_metadata =
+        get_signal_metadata(hierarchy, "top.data").expect("Should get metadata for 'top.data'");
+    assert!(
+        data_metadata.contains("top.data"),
+        "Metadata should contain signal name"
+    );
+    assert!(
+        data_metadata.contains("4 bits"),
+        "Metadata should show 4 bit width"
+    );
 
     // Test getting metadata for non-existent signal
     let error = get_signal_metadata(hierarchy, "nonexistent");
-    assert!(error.is_err(), "Should return error for non-existent signal");
+    assert!(
+        error.is_err(),
+        "Should return error for non-existent signal"
+    );
 }
 
 #[test]
@@ -484,13 +516,15 @@ $enddefinitions $end\n\
     assert!(!events.is_empty(), "Should find at least one event");
 
     // Find events with limit
-    let limited_events = find_signal_events(&waveform, signal_ref, 0, 10, 2)
-        .expect("Should find limited events");
+    let limited_events =
+        find_signal_events(&waveform, signal_ref, 0, 10, 2).expect("Should find limited events");
     assert_eq!(limited_events.len(), 2, "Should limit to 2 events");
 
     // Find events in a specific time range
     let range_events = find_signal_events(&waveform, signal_ref, 2, 3, usize::MAX)
         .expect("Should find events in range");
-    assert!(!range_events.is_empty(), "Should find events in specified range");
+    assert!(
+        !range_events.is_empty(),
+        "Should find events in specified range"
+    );
 }
-

@@ -223,7 +223,9 @@ pub fn read_signal_values(
     let time_table = waveform.time_table();
     let timescale = waveform.hierarchy().timescale();
 
-    let signal = waveform.get_signal(signal_ref).ok_or("Signal not found after loading")?;
+    let signal = waveform
+        .get_signal(signal_ref)
+        .ok_or("Signal not found after loading")?;
 
     let mut results = Vec::new();
 
@@ -240,9 +242,9 @@ pub fn read_signal_values(
         let time_value = time_table[*time_idx];
         let formatted_time = format_time(time_value, timescale.as_ref());
 
-        let time_table_idx: wellen::TimeTableIdx = (*time_idx).try_into().map_err(|_| {
-            format!("Time index {} exceeds maximum value", time_idx)
-        })?;
+        let time_table_idx: wellen::TimeTableIdx = (*time_idx)
+            .try_into()
+            .map_err(|_| format!("Time index {} exceeds maximum value", time_idx))?;
 
         let offset = signal
             .get_offset(time_table_idx)
@@ -251,7 +253,10 @@ pub fn read_signal_values(
         let signal_value = signal.get_value_at(&offset, 0);
         let value_str = format_signal_value(signal_value);
 
-        results.push(format!("Time index {} ({}): {}", time_idx, formatted_time, value_str));
+        results.push(format!(
+            "Time index {} ({}): {}",
+            time_idx, formatted_time, value_str
+        ));
     }
 
     Ok(results)
@@ -265,21 +270,22 @@ pub fn read_signal_values(
 ///
 /// # Returns
 /// A formatted string containing signal metadata, or an error if the signal is not found.
-pub fn get_signal_metadata(hierarchy: &wellen::Hierarchy, signal_path: &str) -> Result<String, String> {
+pub fn get_signal_metadata(
+    hierarchy: &wellen::Hierarchy,
+    signal_path: &str,
+) -> Result<String, String> {
     // Find VarRef from path
     let parts: Vec<&str> = signal_path.split('.').collect();
     let var_ref = if parts.len() > 1 {
         let path = &parts[..parts.len() - 1];
         let name = parts[parts.len() - 1];
-        hierarchy.lookup_var(path, name).ok_or_else(|| {
-            format!("Signal not found: {}", signal_path)
-        })?
+        hierarchy
+            .lookup_var(path, name)
+            .ok_or_else(|| format!("Signal not found: {}", signal_path))?
     } else {
         hierarchy
             .lookup_var(&[], signal_path)
-            .ok_or_else(|| {
-                format!("Signal not found: {}", signal_path)
-            })?
+            .ok_or_else(|| format!("Signal not found: {}", signal_path))?
     };
 
     let var = &hierarchy[var_ref];
@@ -326,7 +332,9 @@ pub fn find_signal_events(
     let time_table = waveform.time_table();
     let timescale = waveform.hierarchy().timescale();
 
-    let signal = waveform.get_signal(signal_ref).ok_or("Signal not found after loading")?;
+    let signal = waveform
+        .get_signal(signal_ref)
+        .ok_or("Signal not found after loading")?;
 
     let mut events = Vec::new();
 
@@ -347,10 +355,11 @@ pub fn find_signal_events(
         let formatted_time = format_time(time_value, timescale.as_ref());
         let value_str = format_signal_value(signal_value);
 
-        events.push(format!("Time index {} ({}): {}", time_idx, formatted_time, value_str));
+        events.push(format!(
+            "Time index {} ({}): {}",
+            time_idx, formatted_time, value_str
+        ));
     }
 
     Ok(events)
 }
-
-

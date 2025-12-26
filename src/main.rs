@@ -11,8 +11,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use waveform_mcp::{
-    find_signal_by_path, find_signal_events, get_signal_metadata, list_signals,
-    read_signal_values,
+    find_signal_by_path, find_signal_events, get_signal_metadata, list_signals, read_signal_values,
 };
 
 // Waveform store - using RwLock for interior mutability
@@ -148,7 +147,9 @@ impl WaveformHandler {
         ))]))
     }
 
-    #[tool(description = "List all signals in an open waveform. Use waveform_id from open_waveform. Optional: filter by name_pattern (case-insensitive substring), hierarchy_prefix (e.g., 'top.module'), recursive (default: true), and limit.")]
+    #[tool(
+        description = "List all signals in an open waveform. Use waveform_id from open_waveform. Optional: filter by name_pattern (case-insensitive substring), hierarchy_prefix (e.g., 'top.module'), recursive (default: true), and limit."
+    )]
     async fn list_signals(
         &self,
         args: Parameters<ListSignalsArgs>,
@@ -178,7 +179,9 @@ impl WaveformHandler {
         ))]))
     }
 
-    #[tool(description = "Read signal values from a waveform. Use waveform_id from open_waveform and signal_path from list_signals. Provide either time_index (single) or time_indices (array).")]
+    #[tool(
+        description = "Read signal values from a waveform. Use waveform_id from open_waveform and signal_path from list_signals. Provide either time_index (single) or time_indices (array)."
+    )]
     async fn read_signal(
         &self,
         args: Parameters<ReadSignalArgs>,
@@ -217,7 +220,9 @@ impl WaveformHandler {
         )]))
     }
 
-    #[tool(description = "Get metadata about a signal. Use waveform_id from open_waveform and signal_path from list_signals.")]
+    #[tool(
+        description = "Get metadata about a signal. Use waveform_id from open_waveform and signal_path from list_signals."
+    )]
     async fn get_signal_info(
         &self,
         args: Parameters<GetSignalInfoArgs>,
@@ -237,7 +242,9 @@ impl WaveformHandler {
         Ok(CallToolResult::success(vec![Content::text(info)]))
     }
 
-    #[tool(description = "Find events (changes) of a signal within a time range. Use waveform_id from open_waveform and signal_path from list_signals. Optional: start_time_index, end_time_index, limit.")]
+    #[tool(
+        description = "Find events (changes) of a signal within a time range. Use waveform_id from open_waveform and signal_path from list_signals. Optional: start_time_index, end_time_index, limit."
+    )]
     async fn find_signal_events(
         &self,
         args: Parameters<FindSignalEventsArgs>,
