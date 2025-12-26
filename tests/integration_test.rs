@@ -2,13 +2,6 @@ use std::io::Write;
 use tempfile::NamedTempFile;
 
 #[test]
-fn test_signal_path_parsing() {
-    // Test the signal path parsing logic
-    // For now, just a basic placeholder test
-    assert!(true);
-}
-
-#[test]
 fn test_tool_response_format() {
     // Test that tool responses are properly formatted
     use serde_json::json;
