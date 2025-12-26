@@ -21,6 +21,9 @@ The server provides 5 MCP tools:
 
 2. **list_signals** - List all signals in an open waveform
    - `waveform_id`: ID or alias of the waveform
+   - `name_pattern`: Optional substring to filter signals by name (case-insensitive)
+   - `hierarchy_prefix`: Optional prefix to filter signals by hierarchy path
+   - `limit`: Optional maximum number of signals to return
 
 3. **read_signal** - Read signal values at specific time indices
    - `waveform_id`: ID or alias of the waveform

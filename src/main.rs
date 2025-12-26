@@ -31,6 +31,12 @@ pub struct OpenWaveformArgs {
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ListSignalsArgs {
     pub waveform_id: String,
+    #[serde(default)]
+    pub name_pattern: Option<String>,
+    #[serde(default)]
+    pub hierarchy_prefix: Option<String>,
+    #[serde(default)]
+    pub limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -150,7 +156,29 @@ impl WaveformHandler {
 
         for var in hierarchy.iter_vars() {
             let path = var.full_name(hierarchy);
+
+            // Apply name pattern filter if provided
+            if let Some(ref pattern) = args.name_pattern {
+                let pattern_lower = pattern.to_lowercase();
+                let path_lower = path.to_lowercase();
+                if !path_lower.contains(&pattern_lower) {
+                    continue;
+                }
+            }
+
+            // Apply hierarchy prefix filter if provided
+            if let Some(ref prefix) = args.hierarchy_prefix {
+                if !path.starts_with(prefix) {
+                    continue;
+                }
+            }
+
             signals.push(path);
+        }
+
+        // Apply limit if provided
+        if let Some(limit) = args.limit {
+            signals.truncate(limit);
         }
 
         Ok(CallToolResult::success(vec![Content::text(format!(
