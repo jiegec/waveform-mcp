@@ -1,7 +1,9 @@
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::*,
-    schemars, tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler, ServiceExt,
+    schemars, tool, tool_handler, tool_router,
+    transport::stdio,
+    ErrorData as McpError, ServerHandler, ServiceExt,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -114,9 +116,8 @@ impl WaveformHandler {
         let hierarchy = waveform.hierarchy();
         let mut signals = Vec::new();
 
-        for var_ref in hierarchy.vars() {
-            let var = &hierarchy[var_ref];
-            let path = get_signal_path(hierarchy, var_ref);
+        for var in hierarchy.iter_vars() {
+            let path = var.full_name(hierarchy);
             signals.push(format!("{} ({})", path, var.signal_ref().index()));
         }
 
@@ -162,9 +163,11 @@ impl WaveformHandler {
             McpError::internal_error("Signal not found after loading".to_string(), None)
         })?;
 
-        let offset = signal.get_offset(time_idx.try_into().unwrap()).ok_or_else(|| {
-            McpError::internal_error("No data available for this time index".to_string(), None)
-        })?;
+        let offset = signal
+            .get_offset(time_idx.try_into().unwrap())
+            .ok_or_else(|| {
+                McpError::internal_error("No data available for this time index".to_string(), None)
+            })?;
 
         let signal_value = signal.get_value_at(&offset, 0);
 
@@ -200,15 +203,20 @@ impl WaveformHandler {
         // Find the VarRef from the path
         let parts: Vec<&str> = args.signal_path.split('.').collect();
         let var_ref = if parts.len() > 1 {
-            let path = &parts[..parts.len()-1];
-            let name = parts[parts.len()-1];
+            let path = &parts[..parts.len() - 1];
+            let name = parts[parts.len() - 1];
             hierarchy.lookup_var(path, name).ok_or_else(|| {
                 McpError::invalid_params(format!("Signal not found: {}", args.signal_path), None)
             })?
         } else {
-            hierarchy.lookup_var(&[], args.signal_path.as_str()).ok_or_else(|| {
-                McpError::invalid_params(format!("Signal not found: {}", args.signal_path), None)
-            })?
+            hierarchy
+                .lookup_var(&[], args.signal_path.as_str())
+                .ok_or_else(|| {
+                    McpError::invalid_params(
+                        format!("Signal not found: {}", args.signal_path),
+                        None,
+                    )
+                })?
         };
 
         let var = &hierarchy[var_ref];
@@ -240,20 +248,9 @@ impl ServerHandler for WaveformHandler {
     }
 }
 
-fn get_signal_path(hierarchy: &wellen::Hierarchy, var_ref: wellen::VarRef) -> String {
-    let var = &hierarchy[var_ref];
-    var.full_name(hierarchy)
-}
-
 fn find_signal_by_path(hierarchy: &wellen::Hierarchy, path: &str) -> Option<wellen::SignalRef> {
-    let parts: Vec<&str> = path.split('.').collect();
-    if parts.is_empty() {
-        return None;
-    }
-
-    for var_ref in hierarchy.vars() {
-        let var = &hierarchy[var_ref];
-        let signal_path = get_signal_path(hierarchy, var_ref);
+    for var in hierarchy.iter_vars() {
+        let signal_path = var.full_name(hierarchy);
         if signal_path == path {
             return Some(var.signal_ref());
         }
@@ -269,22 +266,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let handler = WaveformHandler::new();
 
-    // Use tokio::io::duplex for stdio transport
-    let (server_transport, client_transport) = tokio::io::duplex(4096);
+    let service = handler.serve(stdio()).await.inspect_err(|e| {
+        tracing::error!("Serving error: {:?}", e);
+    })?;
 
-    // Spawn the server
-    let server_handle = tokio::spawn(async move {
-        let service = handler.serve(server_transport).await?;
-        service.waiting().await?;
-        anyhow::Ok(())
-    });
-
-    // For stdio server, we just need to keep the server running
-    // The client_transport side is not used in server mode
-    let _ = client_transport;
-
-    // Wait for server to finish
-    let _ = server_handle.await?;
+    service.waiting().await?;
 
     Ok(())
 }
