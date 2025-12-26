@@ -501,7 +501,7 @@ fn tokenize_condition(condition: &str) -> Result<Vec<String>, String> {
 fn parse_or(tokens: &[String]) -> Result<(Condition, &[String]), String> {
     let (mut left, mut rest) = parse_and(tokens)?;
     while !rest.is_empty() {
-        if rest.get(0) == Some(&"||".to_string()) {
+        if rest.first() == Some(&"||".to_string()) {
             rest = &rest[1..];
             let (right, new_rest) = parse_and(rest)?;
             left = Condition::Or(Box::new(left), Box::new(right));
@@ -517,7 +517,7 @@ fn parse_or(tokens: &[String]) -> Result<(Condition, &[String]), String> {
 fn parse_and(tokens: &[String]) -> Result<(Condition, &[String]), String> {
     let (mut left, mut rest) = parse_comparison(tokens)?;
     while !rest.is_empty() {
-        if rest.get(0) == Some(&"&&".to_string()) {
+        if rest.first() == Some(&"&&".to_string()) {
             rest = &rest[1..];
             let (right, new_rest) = parse_comparison(rest)?;
             left = Condition::And(Box::new(left), Box::new(right));
@@ -533,12 +533,12 @@ fn parse_and(tokens: &[String]) -> Result<(Condition, &[String]), String> {
 fn parse_comparison(tokens: &[String]) -> Result<(Condition, &[String]), String> {
     let (mut left, mut rest) = parse_not(tokens)?;
     while !rest.is_empty() {
-        if rest.get(0) == Some(&"==".to_string()) {
+        if rest.first() == Some(&"==".to_string()) {
             rest = &rest[1..];
             let (right, new_rest) = parse_not(rest)?;
             left = Condition::Eq(Box::new(left), Box::new(right));
             rest = new_rest;
-        } else if rest.get(0) == Some(&"!=".to_string()) {
+        } else if rest.first() == Some(&"!=".to_string()) {
             rest = &rest[1..];
             let (right, new_rest) = parse_not(rest)?;
             left = Condition::Neq(Box::new(left), Box::new(right));
@@ -552,7 +552,7 @@ fn parse_comparison(tokens: &[String]) -> Result<(Condition, &[String]), String>
 
 /// Parse a NOT expression.
 fn parse_not(tokens: &[String]) -> Result<(Condition, &[String]), String> {
-    if tokens.get(0) == Some(&"!".to_string()) {
+    if tokens.first() == Some(&"!".to_string()) {
         let (expr, rest) = parse_not(&tokens[1..])?;
         Ok((Condition::Not(Box::new(expr)), rest))
     } else {
@@ -566,9 +566,9 @@ fn parse_primary(tokens: &[String]) -> Result<(Condition, &[String]), String> {
         return Err("Unexpected end of tokens".to_string());
     }
 
-    if tokens.get(0) == Some(&"(".to_string()) {
+    if tokens.first() == Some(&"(".to_string()) {
         let (expr, rest) = parse_or(&tokens[1..])?;
-        if rest.get(0) != Some(&")".to_string()) {
+        if rest.first() != Some(&")".to_string()) {
             return Err("Expected closing parenthesis".to_string());
         }
         Ok((expr, &rest[1..]))
@@ -836,7 +836,7 @@ pub fn find_conditional_events(
     limit: isize,
 ) -> Result<Vec<String>, String> {
     // Get timescale before any mutable operations
-    let timescale = waveform.hierarchy().timescale().clone();
+    let timescale = waveform.hierarchy().timescale();
 
     // Parse condition
     let condition_ast = parse_condition(condition)?;
@@ -866,7 +866,8 @@ pub fn find_conditional_events(
     let mut events = Vec::new();
 
     // Scan through time indices
-    for time_idx in start_idx..=end_idx.min(time_table.len().saturating_sub(1)) {
+    let end = end_idx.min(time_table.len().saturating_sub(1));
+    for time_idx in start_idx..=end {
         // Evaluate condition at this time index
         if evaluate_condition(&condition_ast, waveform, &signal_cache, time_idx)? {
             let time_value = time_table[time_idx];
