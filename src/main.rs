@@ -10,7 +10,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use waveform_mcp::{find_scope_by_path, find_signal_by_path, format_signal_value, format_time};
+use waveform_mcp::{
+    find_signal_by_path, find_signal_events, get_signal_metadata, list_signals,
+    read_signal_values,
+};
 
 // Waveform store - using RwLock for interior mutability
 type WaveformStore = Arc<RwLock<HashMap<String, wellen::simple::Waveform>>>;
@@ -159,61 +162,14 @@ impl WaveformHandler {
 
         let hierarchy = waveform.hierarchy();
         let recursive = args.recursive.unwrap_or(true);
-        let mut signals = Vec::new();
 
-        if recursive {
-            // Recursive mode: iterate all variables at all levels
-            for var in hierarchy.iter_vars() {
-                let path = var.full_name(hierarchy);
-
-                // Apply name pattern filter if provided
-                if let Some(ref pattern) = args.name_pattern {
-                    let pattern_lower = pattern.to_lowercase();
-                    let path_lower = path.to_lowercase();
-                    if !path_lower.contains(&pattern_lower) {
-                        continue;
-                    }
-                }
-
-                // Apply hierarchy prefix filter if provided
-                if let Some(ref prefix) = args.hierarchy_prefix {
-                    if !path.starts_with(prefix) {
-                        continue;
-                    }
-                }
-
-                signals.push(path);
-            }
-        } else {
-            // Non-recursive mode: only variables at the specified level
-            let target_prefix = args.hierarchy_prefix.as_deref().unwrap_or("");
-
-            if let Some(scope_ref) = find_scope_by_path(hierarchy, target_prefix) {
-                let scope = &hierarchy[scope_ref];
-
-                // Get only variables directly in this scope
-                for var_ref in scope.vars(hierarchy) {
-                    let var = &hierarchy[var_ref];
-                    let path = var.full_name(hierarchy);
-
-                    // Apply name pattern filter if provided
-                    if let Some(ref pattern) = args.name_pattern {
-                        let pattern_lower = pattern.to_lowercase();
-                        let path_lower = path.to_lowercase();
-                        if !path_lower.contains(&pattern_lower) {
-                            continue;
-                        }
-                    }
-
-                    signals.push(path);
-                }
-            }
-        }
-
-        // Apply limit if provided
-        if let Some(limit) = args.limit {
-            signals.truncate(limit);
-        }
+        let signals = list_signals(
+            hierarchy,
+            args.name_pattern.as_deref(),
+            args.hierarchy_prefix.as_deref(),
+            recursive,
+            args.limit,
+        );
 
         Ok(CallToolResult::success(vec![Content::text(format!(
             "Found {} signals:\n{}",
@@ -239,12 +195,8 @@ impl WaveformHandler {
             McpError::invalid_params(format!("Signal not found: {}", args.signal_path), None)
         })?;
 
-        // Now we have mutable access to waveform
         // Load the signal data
         waveform.load_signals(&[signal_ref]);
-
-        let time_table = waveform.time_table();
-        let timescale = waveform.hierarchy().timescale();
 
         // Determine which time indices to read
         let indices_to_read: Vec<usize> = if let Some(ref indices) = args.time_indices {
@@ -257,49 +209,8 @@ impl WaveformHandler {
             )]));
         };
 
-        let signal = waveform.get_signal(signal_ref).ok_or_else(|| {
-            McpError::internal_error("Signal not found after loading".to_string(), None)
-        })?;
-
-        let mut results = Vec::new();
-
-        for time_idx in indices_to_read {
-            if time_idx >= time_table.len() {
-                results.push(format!(
-                    "Time index {} out of range (max: {})",
-                    time_idx,
-                    time_table.len() - 1
-                ));
-                continue;
-            }
-
-            let time_value = time_table[time_idx];
-            let formatted_time = format_time(time_value, timescale.as_ref());
-
-            let time_table_idx: wellen::TimeTableIdx = time_idx.try_into().map_err(|_| {
-                McpError::internal_error(
-                    format!("Time index {} exceeds maximum value", time_idx),
-                    None,
-                )
-            })?;
-
-            let offset = signal
-                .get_offset(time_table_idx)
-                .ok_or_else(|| {
-                    McpError::internal_error(
-                        "No data available for this time index".to_string(),
-                        None,
-                    )
-                })?;
-
-            let signal_value = signal.get_value_at(&offset, 0);
-            let value_str = format_signal_value(signal_value);
-
-            results.push(format!(
-                "Signal '{}' at time index {} ({}): {}",
-                args.signal_path, time_idx, formatted_time, value_str
-            ));
-        }
+        let results = read_signal_values(waveform, signal_ref, &indices_to_read)
+            .map_err(|e| McpError::internal_error(e, None))?;
 
         Ok(CallToolResult::success(vec![Content::text(
             results.join("\n"),
@@ -320,44 +231,8 @@ impl WaveformHandler {
 
         let hierarchy = waveform.hierarchy();
 
-        // Find the VarRef from the path
-        let parts: Vec<&str> = args.signal_path.split('.').collect();
-        let var_ref = if parts.len() > 1 {
-            let path = &parts[..parts.len() - 1];
-            let name = parts[parts.len() - 1];
-            hierarchy.lookup_var(path, name).ok_or_else(|| {
-                McpError::invalid_params(format!("Signal not found: {}", args.signal_path), None)
-            })?
-        } else {
-            hierarchy
-                .lookup_var(&[], args.signal_path.as_str())
-                .ok_or_else(|| {
-                    McpError::invalid_params(
-                        format!("Signal not found: {}", args.signal_path),
-                        None,
-                    )
-                })?
-        };
-
-        let var = &hierarchy[var_ref];
-
-        let width_info = match var.length() {
-            Some(len) => format!("{} bits", len),
-            None => "variable length (string/real)".to_string(),
-        };
-
-        let index_info = match var.index() {
-            Some(idx) => format!("[{}:{}]", idx.msb(), idx.lsb()),
-            None => "N/A".to_string(),
-        };
-
-        let info = format!(
-            "Signal: {}\nType: {:?}\nWidth: {}\nIndex: {}",
-            args.signal_path,
-            var.var_type(),
-            width_info,
-            index_info
-        );
+        let info = get_signal_metadata(hierarchy, &args.signal_path)
+            .map_err(|e| McpError::invalid_params(e, None))?;
 
         Ok(CallToolResult::success(vec![Content::text(info)]))
     }
@@ -383,42 +258,14 @@ impl WaveformHandler {
         waveform.load_signals(&[signal_ref]);
 
         let time_table = waveform.time_table();
-        let timescale = waveform.hierarchy().timescale();
-
         let start_idx = args.start_time_index.unwrap_or(0);
         let end_idx = args
             .end_time_index
             .unwrap_or(time_table.len().saturating_sub(1));
         let limit = args.limit.unwrap_or(usize::MAX);
 
-        let signal = waveform.get_signal(signal_ref).ok_or_else(|| {
-            McpError::internal_error("Signal not found after loading".to_string(), None)
-        })?;
-
-        let mut events = Vec::new();
-
-        for (time_idx, signal_value) in signal.iter_changes() {
-            let time_idx = time_idx as usize;
-
-            // Check if within time range
-            if time_idx < start_idx || time_idx > end_idx {
-                continue;
-            }
-
-            // Check limit
-            if events.len() >= limit {
-                break;
-            }
-
-            let time_value = time_table[time_idx];
-            let formatted_time = format_time(time_value, timescale.as_ref());
-            let value_str = format_signal_value(signal_value);
-
-            events.push(format!(
-                "Time index {} ({}): {}",
-                time_idx, formatted_time, value_str
-            ));
-        }
+        let events = find_signal_events(waveform, signal_ref, start_idx, end_idx, limit)
+            .map_err(|e| McpError::internal_error(e, None))?;
 
         Ok(CallToolResult::success(vec![Content::text(format!(
             "Found {} events for signal '{}' (time range: {} to {}):\n{}",
