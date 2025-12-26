@@ -39,12 +39,12 @@ pub struct ListSignalsArgs {
     pub hierarchy_prefix: Option<String>,
     #[serde(default = "default_recursive")]
     pub recursive: Option<bool>,
-    #[serde(default)]
+    #[serde(default = "default_limit")]
     pub limit: Option<usize>,
 }
 
 fn default_recursive() -> Option<bool> {
-    Some(true)
+    Some(false)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -88,7 +88,7 @@ fn default_end_time() -> Option<usize> {
 }
 
 fn default_limit() -> Option<usize> {
-    None
+    Some(100)
 }
 
 impl Default for WaveformHandler {
