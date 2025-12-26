@@ -13,7 +13,7 @@ An MCP (Model Context Protocol) server for reading and analyzing waveform files 
 
 ## Tools
 
-The server provides 5 MCP tools:
+The server provides 6 MCP tools:
 
 1. **open_waveform** - Open a waveform file
    - `file_path`: Path to .vcd or .fst file
@@ -42,6 +42,27 @@ The server provides 5 MCP tools:
    - `start_time_index`: Optional start of time range (default: 0)
    - `end_time_index`: Optional end of time range (default: last time index)
    - `limit`: Optional maximum number of events to return (default: unlimited)
+
+6. **find_conditional_events** - Find events where a condition is satisfied
+   - `waveform_id`: ID or alias of waveform
+   - `condition`: Conditional expression to evaluate
+   - `start_time_index`: Optional start of time range (default: 0)
+   - `end_time_index`: Optional end of time range (default: last time index)
+   - `limit`: Optional maximum number of events to return (default: 100)
+
+   **Supported condition syntax:**
+   - Signal paths (e.g., `TOP.signal`)
+   - Boolean operators: `&&` (AND), `||` (OR), `!` (NOT)
+   - Comparison operators: `==`, `!=`
+   - Parentheses for grouping: `(condition)`
+   - `$past(signal)` - read signal value from previous time index
+   - Verilog-style literals: `4'b0101` (binary), `3'd2` (decimal), `5'h1A` (hex)
+
+   **Examples:**
+   - Find when signal1 AND signal2 are true: `TOP.signal1 && TOP.signal2`
+   - Find when counter equals a specific value: `TOP.counter == 4'd10`
+   - Find rising edge: `!$past(TOP.signal) && TOP.signal`
+   - Complex condition: `(TOP.valid && TOP.data != 8'hFF) || TOP.error`
 
 ## Installation
 
