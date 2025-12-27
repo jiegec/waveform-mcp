@@ -75,6 +75,7 @@ The server provides 6 MCP tools:
    - Find when counter equals a specific value: `TOP.counter == 4'd10`
    - Find rising edge: `!$past(TOP.signal) && TOP.signal`
    - Find falling edge: `$past(TOP.signal) && !TOP.signal`
+   - Find handshake cycles (when both valid and ready are asserted): `TOP.valid && TOP.ready`
    - Complex condition: `(TOP.valid && TOP.data != 8'hFF) || TOP.error`
    - Bitwise operations: `TOP.flags & 4'b0001` (check if bit 0 is set)
    - Bitwise NOT: `~TOP.mask` (invert all bits)

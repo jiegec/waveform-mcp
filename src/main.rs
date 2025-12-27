@@ -224,7 +224,7 @@ impl WaveformHandler {
     }
 
     #[tool(
-        description = "Read signal values from a waveform. Use waveform_id from open_waveform and signal_path from list_signals. Provide either time_index (single) or time_indices (array). For sophisticated usage like finding rising/falling edges or detecting signal transitions, use find_conditional_events instead with conditions like '!$past(TOP.signal) && TOP.signal' for rising edges."
+        description = "Read signal values from a waveform. Use waveform_id from open_waveform and signal_path from list_signals. Provide either time_index (single) or time_indices (array). For sophisticated usage like finding rising/falling edges, detecting signal transitions, or finding handshake cycles (valid && ready), use find_conditional_events instead."
     )]
     async fn read_signal(
         &self,
@@ -329,7 +329,7 @@ impl WaveformHandler {
     }
 
     #[tool(
-        description = "Find events where a condition is satisfied. Supports signal paths, bitwise operators (~, &, |, ^), boolean operators (&&, ||, !), comparison operators (==, !=), $past(), bit extraction, and Verilog-style literals. Bitwise operators: ~ (NOT), & (AND), | (OR), ^ (XOR). Bit extraction: signal[bit] or signal[msb:lsb]. $past(signal) reads the signal value from the previous time index. Operator precedence: ~, ! (highest), ==, !=, &, ^, |, &&, || (lowest). Examples: rising edge '!$past(TOP.signal) && TOP.signal', falling edge '$past(TOP.signal) && !TOP.signal', check bit 'TOP.flags & 4'b0001', bit extract 'TOP.data[7:0] == 8'hFF'. Optional: start_time_index, end_time_index, limit."
+        description = "Find events where a condition is satisfied. Supports signal paths, bitwise operators (~, &, |, ^), boolean operators (&&, ||, !), comparison operators (==, !=), $past(), bit extraction, and Verilog-style literals. Bitwise operators: ~ (NOT), & (AND), | (OR), ^ (XOR). Bit extraction: signal[bit] or signal[msb:lsb]. $past(signal) reads the signal value from the previous time index. Operator precedence: ~, ! (highest), ==, !=, &, ^, |, &&, || (lowest). Examples: rising edge '!$past(TOP.signal) && TOP.signal', falling edge '$past(TOP.signal) && !TOP.signal', handshake cycles 'TOP.valid && TOP.ready', check bit 'TOP.flags & 4'b0001', bit extract 'TOP.data[7:0] == 8'hFF'. Optional: start_time_index, end_time_index, limit."
     )]
     async fn find_conditional_events(
         &self,
