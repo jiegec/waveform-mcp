@@ -840,3 +840,158 @@ $enddefinitions $end\n\
     // Both time indices should have zero result
     assert_eq!(events.len(), 0, "Should find 0 events where bitwise AND is zero");
 }
+
+#[test]
+fn test_single_bit_extraction() {
+    // Create a VCD file with a 4-bit signal
+    // Value sequence: 0b0101 (5), 0b0011 (3), 0b1010 (10), 0b0110 (6)
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 4 ! counter $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+b0101 !\n\
+#10\n\
+b0011 !\n\
+#20\n\
+b1010 !\n\
+#30\n\
+b0110 !\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test single bit extraction: counter[0] (LSB)
+    // time 0: 0b0101 -> bit 0 = 1
+    // time 1: 0b0011 -> bit 0 = 1
+    // time 2: 0b1010 -> bit 0 = 0
+    // time 3: 0b0110 -> bit 0 = 0
+    let events = find_conditional_events(&mut waveform, "top.counter[0] == 1'b1", 0, 3, -1)
+        .expect("Should find events");
+
+    // Should find events at times 0 and 1 where LSB is 1
+    assert_eq!(events.len(), 2, "Should find 2 events where LSB is 1");
+    assert!(events[0].contains("Time index 0 (0ns)"), "First event at time 0");
+    assert!(events[1].contains("Time index 1 (10ns)"), "Second event at time 1");
+}
+
+#[test]
+fn test_bit_range_extraction() {
+    // Create a VCD file with an 8-bit signal
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 8 ! data $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+b10101010 !\n\
+#10\n\
+b11001100 !\n\
+#20\n\
+b11110000 !\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test bit range extraction: data[7:4] (upper nibble)
+    // time 0: 0b10101010 -> bits[7:4] = 0b1010 = 10
+    // time 1: 0b11001100 -> bits[7:4] = 0b1100 = 12
+    // time 2: 0b11110000 -> bits[7:4] = 0b1111 = 15
+    let events = find_conditional_events(&mut waveform, "top.data[7:4] == 4'b1010", 0, 2, -1)
+        .expect("Should find events");
+
+    assert_eq!(events.len(), 1, "Should find 1 event where upper nibble is 0b1010");
+    assert!(events[0].contains("Time index 0 (0ns)"), "Event at time 0");
+
+    // Test lower nibble: data[3:0]
+    let events = find_conditional_events(&mut waveform, "top.data[3:0] == 4'b1100", 0, 2, -1)
+        .expect("Should find events");
+
+    assert_eq!(events.len(), 1, "Should find 1 event where lower nibble is 0b1100");
+    assert!(events[0].contains("Time index 1 (10ns)"), "Event at time 1");
+}
+
+#[test]
+fn test_bit_extraction_with_bitwise() {
+    // Create a VCD file with two 8-bit signals
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 8 ! sig1 $end\n\
+$var wire 8 0 sig2 $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+b10101010 !\n\
+b11111111 0\n\
+#10\n\
+b11001100 !\n\
+b00000000 0\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test bitwise operation on extracted bits
+    // time 0: sig1[3:0] = 0b1010 = 10, sig2[3:0] = 0b1111 = 15, 10 & 15 = 10 (non-zero)
+    // time 1: sig1[3:0] = 0b1100 = 12, sig2[3:0] = 0b0000 = 0, 12 & 0 = 0 (zero)
+    let events = find_conditional_events(&mut waveform, "top.sig1[3:0] & top.sig2[3:0]", 0, 1, -1)
+        .expect("Should find events");
+
+    assert_eq!(events.len(), 1, "Should find 1 event where bitwise AND of extracted bits is non-zero");
+    assert!(events[0].contains("Time index 0 (0ns)"), "Event at time 0");
+}
+
+#[test]
+fn test_bit_extraction_equals_zero() {
+    // Create a VCD file with a 4-bit signal
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 4 ! counter $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+b0101 !\n\
+#10\n\
+b0000 !\n\
+#20\n\
+b1000 !\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test that extracted bits equal to 0 are handled correctly
+    // time 0: counter[2] = 1 (not equal to 0)
+    // time 1: counter[2] = 0 (equal to 0)
+    // time 2: counter[2] = 0 (equal to 0)
+    let events = find_conditional_events(&mut waveform, "top.counter[2] == 1'b0", 0, 2, -1)
+        .expect("Should find events");
+
+    assert_eq!(events.len(), 2, "Should find 2 events where extracted bit equals 0");
+    assert!(events[0].contains("Time index 1 (10ns)"), "First event at time 1");
+    assert!(events[1].contains("Time index 2 (20ns)"), "Second event at time 2");
+}
+

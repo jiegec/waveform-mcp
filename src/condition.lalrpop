@@ -39,7 +39,21 @@ pub Atom: Condition = {
     "!" <expr: Atom> => Condition::Not(Box::new(expr)),
     "$past" "(" <expr: Expr> ")" => Condition::Past(Box::new(expr)),
     Literal => Condition::Literal(<>),
-    Identifier => Condition::Signal(<>.to_string()),
+    <signal:SignalWithBitSlice> => signal,
+};
+
+pub SignalWithBitSlice: Condition = {
+    <ident:Identifier> "[" <msb:DecLiteral> ":" <lsb:DecLiteral> "]" => {
+        Condition::BitExtract(ident, Some(msb), Some(lsb))
+    },
+    <ident:Identifier> "[" <bit:DecLiteral> "]" => {
+        Condition::BitExtract(ident, Some(bit), Some(bit))
+    },
+    <ident:Identifier> => Condition::Signal(ident),
+};
+
+pub DecLiteral: u32 = {
+    <s:r"[0-9]+"> => s.parse().unwrap(),
 };
 
 pub Literal: Literal = {

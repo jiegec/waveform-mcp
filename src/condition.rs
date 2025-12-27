@@ -27,6 +27,7 @@ pub(super) enum Condition {
     Or(Box<Condition>, Box<Condition>),
     Not(Box<Condition>),
     Signal(String),
+    BitExtract(String, Option<u32>, Option<u32>), // signal, msb (optional), lsb (optional)
     Eq(Box<Condition>, Box<Condition>),
     Neq(Box<Condition>, Box<Condition>),
     BitwiseAnd(Box<Condition>, Box<Condition>),
@@ -40,6 +41,7 @@ pub(super) enum Condition {
 ///
 /// Supports:
 /// - Signal paths (e.g., "TOP.signal")
+/// - Bit extraction: `signal[bit]` for single bit, `signal[msb:lsb]` for range
 /// - `&&` for logical AND
 /// - `||` for logical OR
 /// - `!` for NOT
@@ -138,6 +140,46 @@ fn evaluate_condition(
 
             let signal_value = signal.get_value_at(&offset, 0);
             signal_value_to_biguint(signal_value)
+        }
+        Condition::BitExtract(path, msb, lsb) => {
+            // Get signal ref from cache
+            let signal_ref = signal_cache
+                .get(path)
+                .ok_or_else(|| format!("Signal not found in cache: {}", path))?;
+
+            // Get signal from waveform
+            let signal = waveform
+                .get_signal(*signal_ref)
+                .ok_or_else(|| format!("Signal not found in waveform: {}", path))?;
+
+            // Get value at time index
+            let time_table_idx: wellen::TimeTableIdx = time_idx
+                .try_into()
+                .map_err(|_| format!("Time index {} too large", time_idx))?;
+
+            let offset = signal
+                .get_offset(time_table_idx)
+                .ok_or_else(|| format!("No data for signal {} at time index {}", path, time_idx))?;
+
+            let signal_value = signal.get_value_at(&offset, 0);
+            let full_value = signal_value_to_biguint(signal_value)?;
+
+            // Extract the specified bits
+            match (msb, lsb) {
+                (Some(msb), Some(lsb)) => {
+                    if msb < lsb {
+                        return Err(format!("Invalid bit range [{}:{}] - msb must be >= lsb", msb, lsb));
+                    }
+                    // Extract bits [msb:lsb] by:
+                    // 1. Shift right by lsb positions
+                    // 2. Create a mask with (msb - lsb + 1) bits set
+                    let num_bits = msb - lsb + 1;
+                    let shifted = full_value >> lsb;
+                    let mask = (BigUint::from(1u32) << num_bits) - BigUint::from(1u32);
+                    Ok(shifted & mask)
+                }
+                _ => Ok(full_value), // No bit extraction needed
+            }
         }
         Condition::Eq(left, right) => {
             let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
@@ -425,6 +467,11 @@ fn extract_signal_names_recursive(condition: &Condition, names: &mut Vec<String>
             extract_signal_names_recursive(right, names);
         }
         Condition::Signal(path) => {
+            if !names.contains(path) {
+                names.push(path.clone());
+            }
+        }
+        Condition::BitExtract(path, _, _) => {
             if !names.contains(path) {
                 names.push(path.clone());
             }
