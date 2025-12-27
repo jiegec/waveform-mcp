@@ -37,6 +37,7 @@ pub Comparison: Condition = {
 pub Atom: Condition = {
     "(" <expr: Expr> ")" => expr,
     "!" <expr: Atom> => Condition::Not(Box::new(expr)),
+    "~" <expr: Atom> => Condition::BitwiseNot(Box::new(expr)),
     "$past" "(" <expr: Expr> ")" => Condition::Past(Box::new(expr)),
     Literal => Condition::Literal(<>),
     <signal:SignalWithBitSlice> => signal,

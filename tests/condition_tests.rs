@@ -995,3 +995,142 @@ b1000 !\n\
     assert!(events[1].contains("Time index 2 (20ns)"), "Second event at time 2");
 }
 
+#[test]
+fn test_bitwise_not() {
+    // Create a VCD file with 4-bit signals
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 4 ! sig1 $end\n\
+$var wire 4 0 sig2 $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+b0101 !\n\
+b0011 0\n\
+#10\n\
+b0000 !\n\
+b1111 0\n\
+#20\n\
+b1010 !\n\
+b1100 0\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test bitwise NOT with explicit bit width
+    // ~4'b0101 = 4'b1010 = 10 (non-zero)
+    // ~4'b0000 = 4'b1111 = 15 (non-zero)
+    let events = find_conditional_events(&mut waveform, "~4'b0101", 0, 2, -1)
+        .expect("Should find events for bitwise NOT");
+
+    // Time 0: ~5 = 10 (4'b1010) which is non-zero
+    // Time 1: ~0 = 15 (4'b1111) which is non-zero
+    // Time 2: ~10 = 5 (4'b0101) which is non-zero
+    assert_eq!(events.len(), 3, "Should find 3 events where bitwise NOT is non-zero");
+    assert!(events[0].contains("Time index 0 (0ns)"), "First event at time 0");
+}
+
+#[test]
+fn test_bitwise_not_with_signal() {
+    // Create a VCD file with 4-bit signal
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 4 ! data $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+b0000 !\n\
+#10\n\
+b1111 !\n\
+#20\n\
+b1010 !\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test bitwise NOT on signal
+    // time 0: data=0b0000, ~data=0b1111=15 (non-zero)
+    // time 1: data=0b1111, ~data=0b0000=0 (zero)
+    // time 2: data=0b1010, ~data=0b0101=5 (non-zero)
+    let events = find_conditional_events(&mut waveform, "~top.data", 0, 2, -1)
+        .expect("Should find events for bitwise NOT on signal");
+
+    assert_eq!(events.len(), 2, "Should find 2 events where bitwise NOT is non-zero");
+    assert!(events[0].contains("Time index 0 (0ns)"), "First event at time 0");
+}
+
+#[test]
+fn test_bitwise_not_with_bit_extract() {
+    // Create a VCD file with 8-bit signal
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 8 ! data $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+b00000001 !\n\
+#10\n\
+b00000010 !\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test bitwise NOT on extracted bits
+    // time 0: data[7:0]=1, ~data[7:0]=254 (0b11111110, non-zero)
+    // time 1: data[7:0]=2, ~data[7:0]=253 (0b11111101, non-zero)
+    let events = find_conditional_events(&mut waveform, "~top.data[7:0]", 0, 1, -1)
+        .expect("Should find events for bitwise NOT on bit extraction");
+
+    assert_eq!(events.len(), 2, "Should find 2 events where bitwise NOT of extracted bits is non-zero");
+}
+
+#[test]
+fn test_bitwise_not_with_bitwise_ops() {
+    // Create a VCD file with 4-bit signal
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 4 ! data $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+b0101 !\n\
+#10\n\
+b1010 !\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test combining bitwise NOT with other bitwise operations
+    // time 0: data=5 (0b0101), ~data=10 (0b1010), ~data & data=10 & 5 = 0 (zero)
+    // time 1: data=10 (0b1010), ~data=5 (0b0101), ~data & data=5 & 10 = 0 (zero)
+    let events = find_conditional_events(&mut waveform, "~top.data & top.data", 0, 1, -1)
+        .expect("Should find events for bitwise NOT and AND");
+
+    // Both should result in 0, so no events
+    assert_eq!(events.len(), 0, "Should find 0 events where (~data & data) is zero");
+}
+

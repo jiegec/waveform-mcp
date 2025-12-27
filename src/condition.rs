@@ -1,7 +1,7 @@
 //! Condition parsing and evaluation for conditional event search.
 
 use super::{
-    formatting::format_signal_value, formatting::format_time, hierarchy::find_signal_by_path,
+    formatting::format_signal_value, formatting::format_time, hierarchy::find_var_by_path,
 };
 use lalrpop_util::lalrpop_mod;
 use num_bigint::BigUint;
@@ -15,9 +15,9 @@ lalrpop_mod!(condition);
 /// Literal value for signal comparison.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum Literal {
-    Binary(Vec<bool>),
-    Decimal(u64),
-    Hexadecimal(u64),
+    Binary(Vec<bool>, u32),    // bits, bit width
+    Decimal(u64, u32),         // value, bit width
+    Hexadecimal(u64, u32),      // value, bit width
 }
 
 /// Condition for finding events based on signal values.
@@ -26,6 +26,7 @@ pub(super) enum Condition {
     And(Box<Condition>, Box<Condition>),
     Or(Box<Condition>, Box<Condition>),
     Not(Box<Condition>),
+    BitwiseNot(Box<Condition>),
     Signal(String),
     BitExtract(String, Option<u32>, Option<u32>), // signal, msb (optional), lsb (optional)
     Eq(Box<Condition>, Box<Condition>),
@@ -44,7 +45,8 @@ pub(super) enum Condition {
 /// - Bit extraction: `signal[bit]` for single bit, `signal[msb:lsb]` for range
 /// - `&&` for logical AND
 /// - `||` for logical OR
-/// - `!` for NOT
+/// - `!` for logical NOT
+/// - `~` for bitwise NOT
 /// - `&` for bitwise AND
 /// - `|` for bitwise OR
 /// - `^` for bitwise XOR
@@ -65,7 +67,7 @@ pub(super) fn parse_condition(condition: &str) -> Result<Condition, String> {
 /// # Arguments
 /// * `condition` - The condition to evaluate
 /// * `waveform` - The waveform to read from
-/// * `signal_cache` - Cache of signal references and loaded signals
+/// * `signal_cache` - Cache of variable references
 /// * `time_idx` - The time index to evaluate at
 ///
 /// # Returns
@@ -73,60 +75,99 @@ pub(super) fn parse_condition(condition: &str) -> Result<Condition, String> {
 fn evaluate_condition(
     condition: &Condition,
     waveform: &mut wellen::simple::Waveform,
-    signal_cache: &std::collections::HashMap<String, wellen::SignalRef>,
+    signal_cache: &std::collections::HashMap<String, wellen::VarRef>,
     time_idx: usize,
 ) -> Result<BigUint, String> {
+    let (value, _width) = evaluate_condition_with_width(condition, waveform, signal_cache, time_idx)?;
+    Ok(value)
+}
+
+/// Evaluate a condition at a specific time index, returning both value and bit width.
+///
+/// # Returns
+/// A tuple of (value, bit_width) where bit_width is the bit width of the value.
+fn evaluate_condition_with_width(
+    condition: &Condition,
+    waveform: &mut wellen::simple::Waveform,
+    signal_cache: &std::collections::HashMap<String, wellen::VarRef>,
+    time_idx: usize,
+) -> Result<(BigUint, u32), String> {
     match condition {
         Condition::And(left, right) => {
             let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
             let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
-            Ok(if !left_val.is_zero() && !right_val.is_zero() {
-                BigUint::from(1u32)
-            } else {
-                BigUint::from(0u32)
-            })
+            Ok((
+                if !left_val.is_zero() && !right_val.is_zero() {
+                    BigUint::from(1u32)
+                } else {
+                    BigUint::from(0u32)
+                },
+                1, // Logical operations return 1-bit result
+            ))
         }
         Condition::Or(left, right) => {
             let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
             let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
-            Ok(if !left_val.is_zero() || !right_val.is_zero() {
-                BigUint::from(1u32)
-            } else {
-                BigUint::from(0u32)
-            })
+            Ok((
+                if !left_val.is_zero() || !right_val.is_zero() {
+                    BigUint::from(1u32)
+                } else {
+                    BigUint::from(0u32)
+                },
+                1, // Logical operations return 1-bit result
+            ))
         }
         Condition::BitwiseAnd(left, right) => {
-            let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
-            let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
-            Ok(left_val.bitand(right_val))
+            let (left_val, left_width) = evaluate_condition_with_width(left, waveform, signal_cache, time_idx)?;
+            let (right_val, right_width) = evaluate_condition_with_width(right, waveform, signal_cache, time_idx)?;
+            let width = left_width.max(right_width);
+            Ok((left_val.bitand(right_val), width))
         }
         Condition::BitwiseOr(left, right) => {
-            let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
-            let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
-            Ok(left_val.bitor(right_val))
+            let (left_val, left_width) = evaluate_condition_with_width(left, waveform, signal_cache, time_idx)?;
+            let (right_val, right_width) = evaluate_condition_with_width(right, waveform, signal_cache, time_idx)?;
+            let width = left_width.max(right_width);
+            Ok((left_val.bitor(right_val), width))
         }
         Condition::BitwiseXor(left, right) => {
-            let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
-            let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
-            Ok(left_val.bitxor(right_val))
+            let (left_val, left_width) = evaluate_condition_with_width(left, waveform, signal_cache, time_idx)?;
+            let (right_val, right_width) = evaluate_condition_with_width(right, waveform, signal_cache, time_idx)?;
+            let width = left_width.max(right_width);
+            Ok((left_val.bitxor(right_val), width))
         }
         Condition::Not(expr) => {
             let val = evaluate_condition(expr, waveform, signal_cache, time_idx)?;
-            Ok(if !val.is_zero() {
-                BigUint::from(0u32)
-            } else {
-                BigUint::from(1u32)
-            })
+            Ok((
+                if !val.is_zero() {
+                    BigUint::from(0u32)
+                } else {
+                    BigUint::from(1u32)
+                },
+                1, // Logical NOT returns 1-bit result
+            ))
+        }
+        Condition::BitwiseNot(expr) => {
+            let (val, width) = evaluate_condition_with_width(expr, waveform, signal_cache, time_idx)?;
+            // Create a mask with all bits set for the given width
+            let mask = (BigUint::from(1u32) << width) - BigUint::from(1u32);
+            // Bitwise NOT is value XOR mask
+            Ok((val.bitxor(mask), width))
         }
         Condition::Signal(path) => {
-            // Get signal ref from cache
-            let signal_ref = signal_cache
+            // Get var ref from cache
+            let var_ref = signal_cache
                 .get(path)
                 .ok_or_else(|| format!("Signal not found in cache: {}", path))?;
 
+            // Get signal width from hierarchy
+            let hierarchy = waveform.hierarchy();
+            let width = hierarchy[*var_ref]
+                .length()
+                .ok_or_else(|| format!("Signal {} has no width (string/real type)", path))?;
+
             // Get signal from waveform
             let signal = waveform
-                .get_signal(*signal_ref)
+                .get_signal(hierarchy[*var_ref].signal_ref())
                 .ok_or_else(|| format!("Signal not found in waveform: {}", path))?;
 
             // Get value at time index
@@ -139,17 +180,24 @@ fn evaluate_condition(
                 .ok_or_else(|| format!("No data for signal {} at time index {}", path, time_idx))?;
 
             let signal_value = signal.get_value_at(&offset, 0);
-            signal_value_to_biguint(signal_value)
+            let value = signal_value_to_biguint(signal_value)?;
+            Ok((value, width as u32))
         }
         Condition::BitExtract(path, msb, lsb) => {
-            // Get signal ref from cache
-            let signal_ref = signal_cache
+            // Get var ref from cache
+            let var_ref = signal_cache
                 .get(path)
                 .ok_or_else(|| format!("Signal not found in cache: {}", path))?;
 
+            // Get signal width from hierarchy
+            let hierarchy = waveform.hierarchy();
+            let full_width = hierarchy[*var_ref]
+                .length()
+                .ok_or_else(|| format!("Signal {} has no width (string/real type)", path))? as u32;
+
             // Get signal from waveform
             let signal = waveform
-                .get_signal(*signal_ref)
+                .get_signal(hierarchy[*var_ref].signal_ref())
                 .ok_or_else(|| format!("Signal not found in waveform: {}", path))?;
 
             // Get value at time index
@@ -164,8 +212,8 @@ fn evaluate_condition(
             let signal_value = signal.get_value_at(&offset, 0);
             let full_value = signal_value_to_biguint(signal_value)?;
 
-            // Extract the specified bits
-            match (msb, lsb) {
+            // Extract the specified bits and determine the result width
+            let (result, width) = match (msb, lsb) {
                 (Some(msb), Some(lsb)) => {
                     if msb < lsb {
                         return Err(format!("Invalid bit range [{}:{}] - msb must be >= lsb", msb, lsb));
@@ -176,37 +224,44 @@ fn evaluate_condition(
                     let num_bits = msb - lsb + 1;
                     let shifted = full_value >> lsb;
                     let mask = (BigUint::from(1u32) << num_bits) - BigUint::from(1u32);
-                    Ok(shifted & mask)
+                    (shifted & mask, num_bits)
                 }
-                _ => Ok(full_value), // No bit extraction needed
-            }
+                _ => (full_value, full_width), // No bit extraction needed
+            };
+            Ok((result, width))
         }
         Condition::Eq(left, right) => {
             let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
             let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
-            Ok(if left_val == right_val {
-                BigUint::from(1u32)
-            } else {
-                BigUint::from(0u32)
-            })
+            Ok((
+                if left_val == right_val {
+                    BigUint::from(1u32)
+                } else {
+                    BigUint::from(0u32)
+                },
+                1, // Comparison operations return 1-bit result
+            ))
         }
         Condition::Neq(left, right) => {
             let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
             let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
-            Ok(if left_val != right_val {
-                BigUint::from(1u32)
-            } else {
-                BigUint::from(0u32)
-            })
+            Ok((
+                if left_val != right_val {
+                    BigUint::from(1u32)
+                } else {
+                    BigUint::from(0u32)
+                },
+                1, // Comparison operations return 1-bit result
+            ))
         }
         Condition::Literal(literal) => literal_to_biguint(literal),
         Condition::Past(expr) => {
             // If at time 0, there's no previous value
             if time_idx == 0 {
-                return Ok(BigUint::from(0u32)); // Return false (0) when there's no past
+                return Ok((BigUint::from(0u32), 1)); // Return false (0) when there's no past
             }
             // Evaluate expression at previous time index
-            evaluate_condition(expr, waveform, signal_cache, time_idx - 1)
+            evaluate_condition_with_width(expr, waveform, signal_cache, time_idx - 1)
         }
     }
 }
@@ -267,19 +322,20 @@ fn signal_value_to_biguint(signal_value: wellen::SignalValue) -> Result<BigUint,
 }
 
 /// Convert a literal to BigUint for comparison.
-fn literal_to_biguint(literal: &Literal) -> Result<BigUint, String> {
+/// Also returns the bit width.
+fn literal_to_biguint(literal: &Literal) -> Result<(BigUint, u32), String> {
     match literal {
-        Literal::Binary(bits) => {
+        Literal::Binary(bits, width) => {
             let mut value = BigUint::from(0u32);
             for (i, &bit) in bits.iter().rev().enumerate() {
                 if bit {
                     value.set_bit(i as u64, true);
                 }
             }
-            Ok(value)
+            Ok((value, *width))
         }
-        Literal::Decimal(v) => Ok(BigUint::from(*v)),
-        Literal::Hexadecimal(v) => Ok(BigUint::from(*v)),
+        Literal::Decimal(v, width) => Ok((BigUint::from(*v), *width)),
+        Literal::Hexadecimal(v, width) => Ok((BigUint::from(*v), *width)),
     }
 }
 
@@ -293,6 +349,7 @@ pub(super) fn parse_binary_literal(s: &str) -> Literal {
         panic!("Invalid binary literal: {}", s);
     }
 
+    let width: u32 = parts[0].parse().expect("Invalid bit width");
     let value_str = parts[1].trim_start_matches('b').replace('_', "");
     let mut bits = Vec::new();
     for c in value_str.chars() {
@@ -302,7 +359,7 @@ pub(super) fn parse_binary_literal(s: &str) -> Literal {
             _ => panic!("Invalid binary digit: {}", c),
         }
     }
-    Literal::Binary(bits)
+    Literal::Binary(bits, width)
 }
 
 /// Parse a decimal literal (e.g., "3'd2") from the condition grammar.
@@ -315,9 +372,10 @@ pub(super) fn parse_decimal_literal(s: &str) -> Literal {
         panic!("Invalid decimal literal: {}", s);
     }
 
+    let width: u32 = parts[0].parse().expect("Invalid bit width");
     let value_str = parts[1].trim_start_matches('d').replace('_', "");
     let value: u64 = value_str.parse().expect("Invalid decimal value");
-    Literal::Decimal(value)
+    Literal::Decimal(value, width)
 }
 
 /// Parse a hex literal (e.g., "5'h1A") from the condition grammar.
@@ -330,9 +388,10 @@ pub(super) fn parse_hex_literal(s: &str) -> Literal {
         panic!("Invalid hex literal: {}", s);
     }
 
+    let width: u32 = parts[0].parse().expect("Invalid bit width");
     let value_str = parts[1].trim_start_matches('h').replace('_', "");
     let value = u64::from_str_radix(&value_str, 16).expect("Invalid hex value");
-    Literal::Hexadecimal(value)
+    Literal::Hexadecimal(value, width)
 }
 
 /// Find events where a condition is satisfied.
@@ -364,19 +423,20 @@ pub fn find_conditional_events(
 
     // Find and load all signals
     let mut signal_cache = std::collections::HashMap::new();
+    let hierarchy = waveform.hierarchy();
+
+    // Collect all signal_refs first
+    let mut signal_refs = Vec::new();
     for signal_name in &signal_names {
-        let signal_ref = {
-            let hierarchy = waveform.hierarchy();
-            find_signal_by_path(hierarchy, signal_name)
-                .ok_or_else(|| format!("Signal not found: {}", signal_name))?
-        };
-
-        // Load signal
-        let signal_refs = vec![signal_ref];
-        waveform.load_signals(&signal_refs);
-
-        signal_cache.insert(signal_name.clone(), signal_ref);
+        let var_ref = find_var_by_path(hierarchy, signal_name)
+            .ok_or_else(|| format!("Signal not found: {}", signal_name))?;
+        let signal_ref = hierarchy[var_ref].signal_ref();
+        signal_cache.insert(signal_name.clone(), var_ref);
+        signal_refs.push(signal_ref);
     }
+
+    // Load all signals at once
+    waveform.load_signals(&signal_refs);
 
     // Get time table after loading signals
     let time_table: Vec<wellen::Time> = waveform.time_table().to_vec();
@@ -394,8 +454,10 @@ pub fn find_conditional_events(
             // Build event description with signal values
             let mut signal_values = Vec::new();
             for signal_name in &signal_names {
-                if let Some(signal_ref) = signal_cache.get(signal_name) {
-                    if let Some(signal) = waveform.get_signal(*signal_ref) {
+                if let Some(var_ref) = signal_cache.get(signal_name) {
+                    let hierarchy = waveform.hierarchy();
+                    let signal_ref = hierarchy[*var_ref].signal_ref();
+                    if let Some(signal) = waveform.get_signal(signal_ref) {
                         let time_table_idx: wellen::TimeTableIdx = time_idx
                             .try_into()
                             .map_err(|_| format!("Time index {} too large", time_idx))?;
@@ -444,6 +506,9 @@ fn extract_signal_names_recursive(condition: &Condition, names: &mut Vec<String>
             extract_signal_names_recursive(right, names);
         }
         Condition::Not(expr) => {
+            extract_signal_names_recursive(expr, names);
+        }
+        Condition::BitwiseNot(expr) => {
             extract_signal_names_recursive(expr, names);
         }
         Condition::Eq(left, right) => {

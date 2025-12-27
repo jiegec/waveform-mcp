@@ -11,11 +11,12 @@ Git commit as soon as you have any progress.
 
 Operators in condition expressions are evaluated in the following order (highest to lowest):
 
-1. `==`, `!=` (equality/inequality)
-2. `&` (bitwise AND)
-3. `^` (bitwise XOR)
-4. `|` (bitwise OR)
-5. `&&` (logical AND)
-6. `||` (logical OR)
+1. `~`, `!` (bitwise NOT, logical NOT)
+2. `==`, `!=` (equality/inequality)
+3. `&` (bitwise AND)
+4. `^` (bitwise XOR)
+5. `|` (bitwise OR)
+6. `&&` (logical AND)
+7. `||` (logical OR)
 
 Use parentheses to override default precedence.

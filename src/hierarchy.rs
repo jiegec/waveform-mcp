@@ -2,6 +2,25 @@
 
 use wellen;
 
+/// Find a variable (VarRef) by its hierarchical path in waveform hierarchy.
+///
+/// # Arguments
+/// * `hierarchy` - The waveform hierarchy to search
+/// * `path` - The hierarchical path to signal (e.g., "top.module.signal")
+///
+/// # Returns
+/// `Some(VarRef)` if signal is found, `None` otherwise.
+pub fn find_var_by_path(hierarchy: &wellen::Hierarchy, path: &str) -> Option<wellen::VarRef> {
+    let parts: Vec<&str> = path.split('.').collect();
+    if parts.len() > 1 {
+        let path_parts = &parts[..parts.len() - 1];
+        let name = parts[parts.len() - 1];
+        hierarchy.lookup_var(path_parts, name)
+    } else {
+        hierarchy.lookup_var(&[], path)
+    }
+}
+
 /// Find a signal by its hierarchical path in the waveform hierarchy.
 ///
 /// # Arguments
