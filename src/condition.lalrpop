@@ -14,13 +14,17 @@ pub Factor: Condition = {
 };
 
 pub Bitwise: Condition = {
-    <left: Bitwise> "|" <right: BitwiseAndXor> => Condition::BitwiseOr(Box::new(left), Box::new(right)),
-    BitwiseAndXor,
+    <left: Bitwise> "|" <right: BitwiseXor> => Condition::BitwiseOr(Box::new(left), Box::new(right)),
+    BitwiseXor,
 };
 
-pub BitwiseAndXor: Condition = {
-    <left: BitwiseAndXor> "^" <right: Comparison> => Condition::BitwiseXor(Box::new(left), Box::new(right)),
-    <left: BitwiseAndXor> "&" <right: Comparison> => Condition::BitwiseAnd(Box::new(left), Box::new(right)),
+pub BitwiseXor: Condition = {
+    <left: BitwiseXor> "^" <right: BitwiseAnd> => Condition::BitwiseXor(Box::new(left), Box::new(right)),
+    BitwiseAnd,
+};
+
+pub BitwiseAnd: Condition = {
+    <left: BitwiseAnd> "&" <right: Comparison> => Condition::BitwiseAnd(Box::new(left), Box::new(right)),
     Comparison,
 };
 
