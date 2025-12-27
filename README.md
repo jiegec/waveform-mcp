@@ -53,17 +53,31 @@ The server provides 6 MCP tools:
 
    **Supported condition syntax:**
    - Signal paths (e.g., `TOP.signal`)
+   - Bitwise operators: `~` (NOT), `&` (AND), `|` (OR), `^` (XOR)
    - Boolean operators: `&&` (AND), `||` (OR), `!` (NOT)
    - Comparison operators: `==`, `!=`
    - Parentheses for grouping: `(condition)`
    - `$past(signal)` - read signal value from previous time index
    - Verilog-style literals: `4'b0101` (binary), `3'd2` (decimal), `5'h1A` (hex)
+   - Bit extraction: `signal[bit]` for single bit, `signal[msb:lsb]` for range
+
+   **Operator precedence (highest to lowest):**
+   1. `~`, `!` (bitwise NOT, logical NOT)
+   2. `==`, `!=` (equality/inequality)
+   3. `&` (bitwise AND)
+   4. `^` (bitwise XOR)
+   5. `|` (bitwise OR)
+   6. `&&` (logical AND)
+   7. `||` (logical OR)
 
    **Examples:**
    - Find when signal1 AND signal2 are true: `TOP.signal1 && TOP.signal2`
    - Find when counter equals a specific value: `TOP.counter == 4'd10`
    - Find rising edge: `!$past(TOP.signal) && TOP.signal`
+   - Find falling edge: `$past(TOP.signal) && !TOP.signal`
    - Complex condition: `(TOP.valid && TOP.data != 8'hFF) || TOP.error`
+   - Bitwise operations: `TOP.flags & 4'b0001` (check if bit 0 is set)
+   - Bitwise NOT: `~TOP.mask` (invert all bits)
 
 ## Installation
 

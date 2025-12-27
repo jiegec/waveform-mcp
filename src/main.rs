@@ -224,7 +224,7 @@ impl WaveformHandler {
     }
 
     #[tool(
-        description = "Read signal values from a waveform. Use waveform_id from open_waveform and signal_path from list_signals. Provide either time_index (single) or time_indices (array)."
+        description = "Read signal values from a waveform. Use waveform_id from open_waveform and signal_path from list_signals. Provide either time_index (single) or time_indices (array). For sophisticated usage like finding rising/falling edges or detecting signal transitions, use find_conditional_events instead with conditions like '!$past(TOP.signal) && TOP.signal' for rising edges."
     )]
     async fn read_signal(
         &self,
@@ -329,7 +329,7 @@ impl WaveformHandler {
     }
 
     #[tool(
-        description = "Find events where a condition is satisfied. The condition uses signal paths with && (AND), || (OR), ! (NOT), == (equality), != (inequality), $past(), and parentheses. $past(signal) reads the signal value from the previous time index. Supports Verilog-style literals: 4'b0101, 3'd2, 5'h1A. Examples: 'TOP.signal1 && TOP.signal2', 'TOP.counter == 4'b0101', 'TOP.state != 3'd2', '!$past(TOP.m_aw_valid) && TOP.m_aw_valid'. Optional: start_time_index, end_time_index, limit."
+        description = "Find events where a condition is satisfied. Supports signal paths, bitwise operators (~, &, |, ^), boolean operators (&&, ||, !), comparison operators (==, !=), $past(), bit extraction, and Verilog-style literals. Bitwise operators: ~ (NOT), & (AND), | (OR), ^ (XOR). Bit extraction: signal[bit] or signal[msb:lsb]. $past(signal) reads the signal value from the previous time index. Operator precedence: ~, ! (highest), ==, !=, &, ^, |, &&, || (lowest). Examples: rising edge '!$past(TOP.signal) && TOP.signal', falling edge '$past(TOP.signal) && !TOP.signal', check bit 'TOP.flags & 4'b0001', bit extract 'TOP.data[7:0] == 8'hFF'. Optional: start_time_index, end_time_index, limit."
     )]
     async fn find_conditional_events(
         &self,
