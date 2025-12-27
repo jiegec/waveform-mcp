@@ -6,3 +6,16 @@ Wellen is at https://github.com/ekiwi/wellen. You use it from crates.io.
 Add tests.
 Add Github Actions.
 Git commit as soon as you have any progress.
+
+## Condition Search Operator Precedence
+
+Operators in condition expressions are evaluated in the following order (highest to lowest):
+
+1. `==`, `!=` (equality/inequality)
+2. `&` (bitwise AND)
+3. `^` (bitwise XOR)
+4. `|` (bitwise OR)
+5. `&&` (logical AND)
+6. `||` (logical OR)
+
+Use parentheses to override default precedence.
