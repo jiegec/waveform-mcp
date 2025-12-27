@@ -4,6 +4,9 @@ use super::{
     formatting::format_signal_value, formatting::format_time, hierarchy::find_signal_by_path,
 };
 use lalrpop_util::lalrpop_mod;
+use num_bigint::BigUint;
+use num_traits::Zero;
+use std::ops::{BitAnd, BitOr, BitXor};
 use wellen;
 
 // Import generated parser
@@ -64,50 +67,54 @@ pub(super) fn parse_condition(condition: &str) -> Result<Condition, String> {
 /// * `time_idx` - The time index to evaluate at
 ///
 /// # Returns
-/// An i64 value where 0 = false and any non-zero value = true.
+/// A BigUint value where 0 = false and any non-zero value = true.
 fn evaluate_condition(
     condition: &Condition,
     waveform: &mut wellen::simple::Waveform,
     signal_cache: &std::collections::HashMap<String, wellen::SignalRef>,
     time_idx: usize,
-) -> Result<i64, String> {
+) -> Result<BigUint, String> {
     match condition {
         Condition::And(left, right) => {
             let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
             let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
-            Ok(if left_val != 0 && right_val != 0 {
-                1
+            Ok(if !left_val.is_zero() && !right_val.is_zero() {
+                BigUint::from(1u32)
             } else {
-                0
+                BigUint::from(0u32)
             })
         }
         Condition::Or(left, right) => {
             let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
             let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
-            Ok(if left_val != 0 || right_val != 0 {
-                1
+            Ok(if !left_val.is_zero() || !right_val.is_zero() {
+                BigUint::from(1u32)
             } else {
-                0
+                BigUint::from(0u32)
             })
         }
         Condition::BitwiseAnd(left, right) => {
             let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
             let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
-            Ok(left_val & right_val)
+            Ok(left_val.bitand(right_val))
         }
         Condition::BitwiseOr(left, right) => {
             let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
             let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
-            Ok(left_val | right_val)
+            Ok(left_val.bitor(right_val))
         }
         Condition::BitwiseXor(left, right) => {
             let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
             let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
-            Ok(left_val ^ right_val)
+            Ok(left_val.bitxor(right_val))
         }
         Condition::Not(expr) => {
             let val = evaluate_condition(expr, waveform, signal_cache, time_idx)?;
-            Ok(if val != 0 { 0 } else { 1 })
+            Ok(if !val.is_zero() {
+                BigUint::from(0u32)
+            } else {
+                BigUint::from(1u32)
+            })
         }
         Condition::Signal(path) => {
             // Get signal ref from cache
@@ -130,23 +137,31 @@ fn evaluate_condition(
                 .ok_or_else(|| format!("No data for signal {} at time index {}", path, time_idx))?;
 
             let signal_value = signal.get_value_at(&offset, 0);
-            signal_value_to_i64(signal_value)
+            signal_value_to_biguint(signal_value)
         }
         Condition::Eq(left, right) => {
             let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
             let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
-            Ok(if left_val == right_val { 1 } else { 0 })
+            Ok(if left_val == right_val {
+                BigUint::from(1u32)
+            } else {
+                BigUint::from(0u32)
+            })
         }
         Condition::Neq(left, right) => {
             let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
             let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
-            Ok(if left_val != right_val { 1 } else { 0 })
+            Ok(if left_val != right_val {
+                BigUint::from(1u32)
+            } else {
+                BigUint::from(0u32)
+            })
         }
-        Condition::Literal(literal) => literal_to_i64(literal),
+        Condition::Literal(literal) => literal_to_biguint(literal),
         Condition::Past(expr) => {
             // If at time 0, there's no previous value
             if time_idx == 0 {
-                return Ok(0); // Return false (0) when there's no past
+                return Ok(BigUint::from(0u32)); // Return false (0) when there's no past
             }
             // Evaluate expression at previous time index
             evaluate_condition(expr, waveform, signal_cache, time_idx - 1)
@@ -154,32 +169,40 @@ fn evaluate_condition(
     }
 }
 
-/// Convert a signal value to i64 for comparison.
-fn signal_value_to_i64(signal_value: wellen::SignalValue) -> Result<i64, String> {
+/// Convert a signal value to BigUint for comparison.
+fn signal_value_to_biguint(signal_value: wellen::SignalValue) -> Result<BigUint, String> {
     match signal_value {
         wellen::SignalValue::Binary(data, _) => {
-            let mut value: i64 = 0;
-            for (i, &b) in data.iter().enumerate() {
-                if b != 0 {
-                    value |= (b as i64) << i;
+            // wellen stores the value as a Vec<u32> where each element is a chunk of bits
+            // We need to combine these chunks into a single BigUint
+            let mut value = BigUint::from(0u32);
+            for (i, &chunk) in data.iter().enumerate() {
+                if chunk != 0 {
+                    // Each chunk is at position i * 32 bits
+                    let chunk_value = BigUint::from(chunk);
+                    value = value | (chunk_value << (i * 32));
                 }
             }
             Ok(value)
         }
         wellen::SignalValue::FourValue(data, _) => {
-            let mut value: i64 = 0;
-            for (i, &b) in data.iter().enumerate() {
-                if b != 0 {
-                    value |= (b as i64) << i;
+            // Same as Binary for FourValue
+            let mut value = BigUint::from(0u32);
+            for (i, &chunk) in data.iter().enumerate() {
+                if chunk != 0 {
+                    let chunk_value = BigUint::from(chunk);
+                    value = value | (chunk_value << (i * 32));
                 }
             }
             Ok(value)
         }
         wellen::SignalValue::NineValue(data, _) => {
-            let mut value: i64 = 0;
-            for (i, &b) in data.iter().enumerate() {
-                if b != 0 {
-                    value |= (b as i64) << i;
+            // Same as Binary for NineValue
+            let mut value = BigUint::from(0u32);
+            for (i, &chunk) in data.iter().enumerate() {
+                if chunk != 0 {
+                    let chunk_value = BigUint::from(chunk);
+                    value = value | (chunk_value << (i * 32));
                 }
             }
             Ok(value)
@@ -187,33 +210,34 @@ fn signal_value_to_i64(signal_value: wellen::SignalValue) -> Result<i64, String>
         wellen::SignalValue::String(s) => {
             // Handle special string values for boolean context
             if s == "1" || s.eq_ignore_ascii_case("true") {
-                Ok(1)
+                Ok(BigUint::from(1u32))
             } else if s == "0" || s.eq_ignore_ascii_case("false") {
-                Ok(0)
+                Ok(BigUint::from(0u32))
             } else {
-                s.parse()
+                s.parse::<u64>()
+                    .map(|v| BigUint::from(v))
                     .map_err(|_| format!("Cannot convert string '{}' to integer", s))
             }
         }
-        wellen::SignalValue::Real(r) => Ok(r as i64),
+        wellen::SignalValue::Real(r) => Ok(BigUint::from(r as u64)),
         wellen::SignalValue::Event => Err("Event signal cannot be compared".to_string()),
     }
 }
 
-/// Convert a literal to i64 for comparison.
-fn literal_to_i64(literal: &Literal) -> Result<i64, String> {
+/// Convert a literal to BigUint for comparison.
+fn literal_to_biguint(literal: &Literal) -> Result<BigUint, String> {
     match literal {
         Literal::Binary(bits) => {
-            let mut value: i64 = 0;
+            let mut value = BigUint::from(0u32);
             for (i, &bit) in bits.iter().rev().enumerate() {
                 if bit {
-                    value |= 1i64 << i;
+                    value.set_bit(i as u64, true);
                 }
             }
             Ok(value)
         }
-        Literal::Decimal(v) => Ok(*v as i64),
-        Literal::Hexadecimal(v) => Ok(*v as i64),
+        Literal::Decimal(v) => Ok(BigUint::from(*v)),
+        Literal::Hexadecimal(v) => Ok(BigUint::from(*v)),
     }
 }
 
@@ -322,7 +346,7 @@ pub fn find_conditional_events(
     for (idx, &time_value) in time_table[start_idx..=end].iter().enumerate() {
         let time_idx = start_idx + idx;
         // Evaluate condition at this time index (0 = false, non-zero = true)
-        if evaluate_condition(&condition_ast, waveform, &signal_cache, time_idx)? != 0 {
+        if !evaluate_condition(&condition_ast, waveform, &signal_cache, time_idx)?.is_zero() {
             let formatted_time = format_time(time_value, timescale.as_ref());
 
             // Build event description with signal values
