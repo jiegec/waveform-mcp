@@ -475,3 +475,125 @@ $enddefinitions $end\n\
     // Should find 0 events since past values are all 0 (false)
     assert_eq!(events.len(), 0, "Should find 0 events");
 }
+
+#[test]
+fn test_past_with_and_expression() {
+    // Create a VCD file with two signals that have overlapping true states
+    // Signal pattern:
+    // signal1: 0 -> 0 -> 1 -> 0 -> 1 -> 0
+    // signal2: 1 -> 1 -> 1 -> 0 -> 1 -> 0
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 1 0 signal1 $end\n\
+$var wire 1 1 signal2 $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+00\n\
+11\n\
+#10\n\
+10\n\
+#20\n\
+00\n\
+#30\n\
+10\n\
+11\n\
+#40\n\
+00\n\
+01\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test $past(signal1 && signal2)
+    // We're checking if the AND expression was true in the previous time step
+    // Timeline:
+    // time 0: signal1=0, signal2=1 => $past(signal1 && signal2)=false (no past)
+    // time 1: signal1=1, signal2=1 => $past(signal1 && signal2)=false (at time 0: 0 && 1 = false)
+    // time 2: signal1=0, signal2=1 => $past(signal1 && signal2)=true  (at time 1: 1 && 1 = true)
+    // time 3: signal1=1, signal2=1 => $past(signal1 && signal2)=false (at time 2: 0 && 1 = false)
+    // time 4: signal1=0, signal2=0 => $past(signal1 && signal2)=true  (at time 3: 1 && 1 = true)
+    let events =
+        find_conditional_events(&mut waveform, "$past(top.signal1 && top.signal2)", 0, 4, -1)
+            .expect("Should find events for $past with AND expression");
+
+    // Should find 2 events at time indices 2 and 4 where the previous time had both signals true
+    assert_eq!(
+        events.len(),
+        2,
+        "Should find 2 events where $past(signal1 && signal2) is true"
+    );
+    assert!(
+        events[0].contains("Time index 2 (20ns)"),
+        "First event at time 2"
+    );
+    assert!(
+        events[1].contains("Time index 4 (40ns)"),
+        "Second event at time 4"
+    );
+}
+
+#[test]
+fn test_nested_past() {
+    // Create a VCD file with a signal that toggles
+    // Signal pattern: 0 -> 1 -> 0 -> 1 -> 0 -> 1
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 1 0 signal $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+00\n\
+#10\n\
+10\n\
+#20\n\
+00\n\
+#30\n\
+10\n\
+#40\n\
+00\n\
+#50\n\
+10\n\
+";
+
+    let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::fs::write(temp_file.path(), vcd_content).expect("Failed to write VCD file");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // Test nested $past($past(signal))
+    // Timeline:
+    // time 0: signal=0, $past=0(no past), $past($past)=0(no past)
+    // time 1: signal=1, $past=0, $past($past)=0(no past at time -1)
+    // time 2: signal=0, $past=1, $past($past)=0
+    // time 3: signal=1, $past=0, $past($past)=1 (at time 2, $past was 1)
+    // time 4: signal=0, $past=1, $past($past)=0
+    // time 5: signal=1, $past=0, $past($past)=1 (at time 4, $past was 1)
+    let events =
+        find_conditional_events(&mut waveform, "$past($past(top.signal))", 0, 5, -1)
+            .expect("Should find events for nested $past");
+
+    // Should find 2 events at time indices 3 and 5 where $past($past) is true
+    assert_eq!(
+        events.len(),
+        2,
+        "Should find 2 events where $past($past(signal)) is true"
+    );
+    assert!(
+        events[0].contains("Time index 3 (30ns)"),
+        "First event at time 3"
+    );
+    assert!(
+        events[1].contains("Time index 5 (50ns)"),
+        "Second event at time 5"
+    );
+}
