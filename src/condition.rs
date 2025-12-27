@@ -26,6 +26,9 @@ pub(super) enum Condition {
     Signal(String),
     Eq(Box<Condition>, Box<Condition>),
     Neq(Box<Condition>, Box<Condition>),
+    BitwiseAnd(Box<Condition>, Box<Condition>),
+    BitwiseOr(Box<Condition>, Box<Condition>),
+    BitwiseXor(Box<Condition>, Box<Condition>),
     Literal(Literal),
     Past(Box<Condition>),
 }
@@ -34,9 +37,12 @@ pub(super) enum Condition {
 ///
 /// Supports:
 /// - Signal paths (e.g., "TOP.signal")
-/// - `&&` for AND
-/// - `||` for OR
+/// - `&&` for logical AND
+/// - `||` for logical OR
 /// - `!` for NOT
+/// - `&` for bitwise AND
+/// - `|` for bitwise OR
+/// - `^` for bitwise XOR
 /// - `==` for equality comparison
 /// - `!=` for inequality comparison
 /// - `$past(signal)` to read signal value from previous time index
@@ -83,6 +89,21 @@ fn evaluate_condition(
             } else {
                 0
             })
+        }
+        Condition::BitwiseAnd(left, right) => {
+            let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
+            let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
+            Ok(left_val & right_val)
+        }
+        Condition::BitwiseOr(left, right) => {
+            let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
+            let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
+            Ok(left_val | right_val)
+        }
+        Condition::BitwiseXor(left, right) => {
+            let left_val = evaluate_condition(left, waveform, signal_cache, time_idx)?;
+            let right_val = evaluate_condition(right, waveform, signal_cache, time_idx)?;
+            Ok(left_val ^ right_val)
         }
         Condition::Not(expr) => {
             let val = evaluate_condition(expr, waveform, signal_cache, time_idx)?;
@@ -364,6 +385,18 @@ fn extract_signal_names_recursive(condition: &Condition, names: &mut Vec<String>
             extract_signal_names_recursive(right, names);
         }
         Condition::Neq(left, right) => {
+            extract_signal_names_recursive(left, names);
+            extract_signal_names_recursive(right, names);
+        }
+        Condition::BitwiseAnd(left, right) => {
+            extract_signal_names_recursive(left, names);
+            extract_signal_names_recursive(right, names);
+        }
+        Condition::BitwiseOr(left, right) => {
+            extract_signal_names_recursive(left, names);
+            extract_signal_names_recursive(right, names);
+        }
+        Condition::BitwiseXor(left, right) => {
             extract_signal_names_recursive(left, names);
             extract_signal_names_recursive(right, names);
         }

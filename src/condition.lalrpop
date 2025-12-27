@@ -9,23 +9,30 @@ pub Expr: Condition = {
 };
 
 pub Factor: Condition = {
-    <left: Factor> "&&" <right: UnaryOp> => Condition::And(Box::new(left), Box::new(right)),
-    UnaryOp,
+    <left: Factor> "&&" <right: Bitwise> => Condition::And(Box::new(left), Box::new(right)),
+    Bitwise,
 };
 
-pub UnaryOp: Condition = {
-    "!" <expr: UnaryOp> => Condition::Not(Box::new(expr)),
+pub Bitwise: Condition = {
+    <left: Bitwise> "|" <right: BitwiseAndXor> => Condition::BitwiseOr(Box::new(left), Box::new(right)),
+    BitwiseAndXor,
+};
+
+pub BitwiseAndXor: Condition = {
+    <left: BitwiseAndXor> "^" <right: Comparison> => Condition::BitwiseXor(Box::new(left), Box::new(right)),
+    <left: BitwiseAndXor> "&" <right: Comparison> => Condition::BitwiseAnd(Box::new(left), Box::new(right)),
     Comparison,
 };
 
 pub Comparison: Condition = {
-    <left: Comparison> "==" <right: Primary> => Condition::Eq(Box::new(left), Box::new(right)),
-    <left: Comparison> "!=" <right: Primary> => Condition::Neq(Box::new(left), Box::new(right)),
-    Primary,
+    <left: Comparison> "==" <right: Atom> => Condition::Eq(Box::new(left), Box::new(right)),
+    <left: Comparison> "!=" <right: Atom> => Condition::Neq(Box::new(left), Box::new(right)),
+    Atom,
 };
 
-pub Primary: Condition = {
+pub Atom: Condition = {
     "(" <expr: Expr> ")" => expr,
+    "!" <expr: Atom> => Condition::Not(Box::new(expr)),
     "$past" "(" <expr: Expr> ")" => Condition::Past(Box::new(expr)),
     Literal => Condition::Literal(<>),
     Identifier => Condition::Signal(<>.to_string()),
