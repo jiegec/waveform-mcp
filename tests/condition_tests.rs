@@ -578,9 +578,8 @@ $enddefinitions $end\n\
     // time 3: signal=1, $past=0, $past($past)=1 (at time 2, $past was 1)
     // time 4: signal=0, $past=1, $past($past)=0
     // time 5: signal=1, $past=0, $past($past)=1 (at time 4, $past was 1)
-    let events =
-        find_conditional_events(&mut waveform, "$past($past(top.signal))", 0, 5, -1)
-            .expect("Should find events for nested $past");
+    let events = find_conditional_events(&mut waveform, "$past($past(top.signal))", 0, 5, -1)
+        .expect("Should find events for nested $past");
 
     // Should find 2 events at time indices 3 and 5 where $past($past) is true
     assert_eq!(
@@ -640,7 +639,11 @@ b0100 0\n\
         .expect("Should find events for bitwise AND");
 
     // Should find 3 events where result is non-zero (times 0, 1, 3)
-    assert_eq!(events.len(), 3, "Should find 3 events where bitwise AND is non-zero");
+    assert_eq!(
+        events.len(),
+        3,
+        "Should find 3 events where bitwise AND is non-zero"
+    );
     assert!(
         events[0].contains("Time index 0 (0ns)"),
         "First event at time 0"
@@ -679,7 +682,11 @@ b0100 0\n\
         .expect("Should find events for bitwise OR");
 
     // Both time indices should have non-zero result
-    assert_eq!(events.len(), 2, "Should find 2 events where bitwise OR is non-zero");
+    assert_eq!(
+        events.len(),
+        2,
+        "Should find 2 events where bitwise OR is non-zero"
+    );
 }
 
 #[test]
@@ -718,7 +725,11 @@ b0000 0\n\
         .expect("Should find events for bitwise XOR");
 
     // All time indices should have non-zero result
-    assert_eq!(events.len(), 3, "Should find 3 events where bitwise XOR is non-zero");
+    assert_eq!(
+        events.len(),
+        3,
+        "Should find 3 events where bitwise XOR is non-zero"
+    );
 }
 
 #[test]
@@ -762,7 +773,11 @@ b0100 1\n\
     .expect("Should find events for mixed bitwise operations");
 
     // Both time indices should have non-zero result
-    assert_eq!(events.len(), 2, "Should find 2 events for mixed bitwise operations");
+    assert_eq!(
+        events.len(),
+        2,
+        "Should find 2 events for mixed bitwise operations"
+    );
 }
 
 #[test]
@@ -793,14 +808,9 @@ $enddefinitions $end\n\
     // Test combining bitwise and logical operations
     // time 0: sig1=0, sig2=1, sig1 & sig2 = 0, false && sig2 = 0 && 1 = false
     // time 1: sig1=0, sig2=1, sig1 & sig2 = 0, false && sig2 = 0 && 1 = false
-    let events = find_conditional_events(
-        &mut waveform,
-        "top.sig1 & top.sig2 && top.sig2",
-        0,
-        1,
-        -1,
-    )
-    .expect("Should find events for bitwise and logical operations");
+    let events =
+        find_conditional_events(&mut waveform, "top.sig1 & top.sig2 && top.sig2", 0, 1, -1)
+            .expect("Should find events for bitwise and logical operations");
 
     // No events should match (0 & 1 = 0 is false)
     assert_eq!(events.len(), 0, "Should find 0 events");
@@ -838,7 +848,11 @@ $enddefinitions $end\n\
         .expect("Should find events for bitwise AND");
 
     // Both time indices should have zero result
-    assert_eq!(events.len(), 0, "Should find 0 events where bitwise AND is zero");
+    assert_eq!(
+        events.len(),
+        0,
+        "Should find 0 events where bitwise AND is zero"
+    );
 }
 
 #[test]
@@ -878,8 +892,14 @@ b0110 !\n\
 
     // Should find events at times 0 and 1 where LSB is 1
     assert_eq!(events.len(), 2, "Should find 2 events where LSB is 1");
-    assert!(events[0].contains("Time index 0 (0ns)"), "First event at time 0");
-    assert!(events[1].contains("Time index 1 (10ns)"), "Second event at time 1");
+    assert!(
+        events[0].contains("Time index 0 (0ns)"),
+        "First event at time 0"
+    );
+    assert!(
+        events[1].contains("Time index 1 (10ns)"),
+        "Second event at time 1"
+    );
 }
 
 #[test]
@@ -913,14 +933,22 @@ b11110000 !\n\
     let events = find_conditional_events(&mut waveform, "top.data[7:4] == 4'b1010", 0, 2, -1)
         .expect("Should find events");
 
-    assert_eq!(events.len(), 1, "Should find 1 event where upper nibble is 0b1010");
+    assert_eq!(
+        events.len(),
+        1,
+        "Should find 1 event where upper nibble is 0b1010"
+    );
     assert!(events[0].contains("Time index 0 (0ns)"), "Event at time 0");
 
     // Test lower nibble: data[3:0]
     let events = find_conditional_events(&mut waveform, "top.data[3:0] == 4'b1100", 0, 2, -1)
         .expect("Should find events");
 
-    assert_eq!(events.len(), 1, "Should find 1 event where lower nibble is 0b1100");
+    assert_eq!(
+        events.len(),
+        1,
+        "Should find 1 event where lower nibble is 0b1100"
+    );
     assert!(events[0].contains("Time index 1 (10ns)"), "Event at time 1");
 }
 
@@ -955,7 +983,11 @@ b00000000 0\n\
     let events = find_conditional_events(&mut waveform, "top.sig1[3:0] & top.sig2[3:0]", 0, 1, -1)
         .expect("Should find events");
 
-    assert_eq!(events.len(), 1, "Should find 1 event where bitwise AND of extracted bits is non-zero");
+    assert_eq!(
+        events.len(),
+        1,
+        "Should find 1 event where bitwise AND of extracted bits is non-zero"
+    );
     assert!(events[0].contains("Time index 0 (0ns)"), "Event at time 0");
 }
 
@@ -990,9 +1022,19 @@ b1000 !\n\
     let events = find_conditional_events(&mut waveform, "top.counter[2] == 1'b0", 0, 2, -1)
         .expect("Should find events");
 
-    assert_eq!(events.len(), 2, "Should find 2 events where extracted bit equals 0");
-    assert!(events[0].contains("Time index 1 (10ns)"), "First event at time 1");
-    assert!(events[1].contains("Time index 2 (20ns)"), "Second event at time 2");
+    assert_eq!(
+        events.len(),
+        2,
+        "Should find 2 events where extracted bit equals 0"
+    );
+    assert!(
+        events[0].contains("Time index 1 (10ns)"),
+        "First event at time 1"
+    );
+    assert!(
+        events[1].contains("Time index 2 (20ns)"),
+        "Second event at time 2"
+    );
 }
 
 #[test]
@@ -1032,8 +1074,15 @@ b1100 0\n\
     // Time 0: ~5 = 10 (4'b1010) which is non-zero
     // Time 1: ~0 = 15 (4'b1111) which is non-zero
     // Time 2: ~10 = 5 (4'b0101) which is non-zero
-    assert_eq!(events.len(), 3, "Should find 3 events where bitwise NOT is non-zero");
-    assert!(events[0].contains("Time index 0 (0ns)"), "First event at time 0");
+    assert_eq!(
+        events.len(),
+        3,
+        "Should find 3 events where bitwise NOT is non-zero"
+    );
+    assert!(
+        events[0].contains("Time index 0 (0ns)"),
+        "First event at time 0"
+    );
 }
 
 #[test]
@@ -1067,8 +1116,15 @@ b1010 !\n\
     let events = find_conditional_events(&mut waveform, "~top.data", 0, 2, -1)
         .expect("Should find events for bitwise NOT on signal");
 
-    assert_eq!(events.len(), 2, "Should find 2 events where bitwise NOT is non-zero");
-    assert!(events[0].contains("Time index 0 (0ns)"), "First event at time 0");
+    assert_eq!(
+        events.len(),
+        2,
+        "Should find 2 events where bitwise NOT is non-zero"
+    );
+    assert!(
+        events[0].contains("Time index 0 (0ns)"),
+        "First event at time 0"
+    );
 }
 
 #[test]
@@ -1099,7 +1155,11 @@ b00000010 !\n\
     let events = find_conditional_events(&mut waveform, "~top.data[7:0]", 0, 1, -1)
         .expect("Should find events for bitwise NOT on bit extraction");
 
-    assert_eq!(events.len(), 2, "Should find 2 events where bitwise NOT of extracted bits is non-zero");
+    assert_eq!(
+        events.len(),
+        2,
+        "Should find 2 events where bitwise NOT of extracted bits is non-zero"
+    );
 }
 
 #[test]
@@ -1131,6 +1191,9 @@ b1010 !\n\
         .expect("Should find events for bitwise NOT and AND");
 
     // Both should result in 0, so no events
-    assert_eq!(events.len(), 0, "Should find 0 events where (~data & data) is zero");
+    assert_eq!(
+        events.len(),
+        0,
+        "Should find 0 events where (~data & data) is zero"
+    );
 }
-

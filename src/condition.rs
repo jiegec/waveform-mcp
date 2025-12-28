@@ -15,9 +15,9 @@ lalrpop_mod!(condition);
 /// Literal value for signal comparison.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum Literal {
-    Binary(Vec<bool>, u32),    // bits, bit width
-    Decimal(u64, u32),         // value, bit width
-    Hexadecimal(u64, u32),      // value, bit width
+    Binary(Vec<bool>, u32), // bits, bit width
+    Decimal(u64, u32),      // value, bit width
+    Hexadecimal(u64, u32),  // value, bit width
 }
 
 /// Condition for finding events based on signal values.
@@ -78,7 +78,8 @@ fn evaluate_condition(
     signal_cache: &std::collections::HashMap<String, wellen::VarRef>,
     time_idx: usize,
 ) -> Result<BigUint, String> {
-    let (value, _width) = evaluate_condition_with_width(condition, waveform, signal_cache, time_idx)?;
+    let (value, _width) =
+        evaluate_condition_with_width(condition, waveform, signal_cache, time_idx)?;
     Ok(value)
 }
 
@@ -118,20 +119,26 @@ fn evaluate_condition_with_width(
             ))
         }
         Condition::BitwiseAnd(left, right) => {
-            let (left_val, left_width) = evaluate_condition_with_width(left, waveform, signal_cache, time_idx)?;
-            let (right_val, right_width) = evaluate_condition_with_width(right, waveform, signal_cache, time_idx)?;
+            let (left_val, left_width) =
+                evaluate_condition_with_width(left, waveform, signal_cache, time_idx)?;
+            let (right_val, right_width) =
+                evaluate_condition_with_width(right, waveform, signal_cache, time_idx)?;
             let width = left_width.max(right_width);
             Ok((left_val.bitand(right_val), width))
         }
         Condition::BitwiseOr(left, right) => {
-            let (left_val, left_width) = evaluate_condition_with_width(left, waveform, signal_cache, time_idx)?;
-            let (right_val, right_width) = evaluate_condition_with_width(right, waveform, signal_cache, time_idx)?;
+            let (left_val, left_width) =
+                evaluate_condition_with_width(left, waveform, signal_cache, time_idx)?;
+            let (right_val, right_width) =
+                evaluate_condition_with_width(right, waveform, signal_cache, time_idx)?;
             let width = left_width.max(right_width);
             Ok((left_val.bitor(right_val), width))
         }
         Condition::BitwiseXor(left, right) => {
-            let (left_val, left_width) = evaluate_condition_with_width(left, waveform, signal_cache, time_idx)?;
-            let (right_val, right_width) = evaluate_condition_with_width(right, waveform, signal_cache, time_idx)?;
+            let (left_val, left_width) =
+                evaluate_condition_with_width(left, waveform, signal_cache, time_idx)?;
+            let (right_val, right_width) =
+                evaluate_condition_with_width(right, waveform, signal_cache, time_idx)?;
             let width = left_width.max(right_width);
             Ok((left_val.bitxor(right_val), width))
         }
@@ -147,7 +154,8 @@ fn evaluate_condition_with_width(
             ))
         }
         Condition::BitwiseNot(expr) => {
-            let (val, width) = evaluate_condition_with_width(expr, waveform, signal_cache, time_idx)?;
+            let (val, width) =
+                evaluate_condition_with_width(expr, waveform, signal_cache, time_idx)?;
             // Create a mask with all bits set for the given width
             let mask = (BigUint::from(1u32) << width) - BigUint::from(1u32);
             // Bitwise NOT is value XOR mask
@@ -181,7 +189,7 @@ fn evaluate_condition_with_width(
 
             let signal_value = signal.get_value_at(&offset, 0);
             let value = signal_value_to_biguint(signal_value)?;
-            Ok((value, width as u32))
+            Ok((value, width))
         }
         Condition::BitExtract(path, msb, lsb) => {
             // Get var ref from cache
@@ -193,7 +201,7 @@ fn evaluate_condition_with_width(
             let hierarchy = waveform.hierarchy();
             let full_width = hierarchy[*var_ref]
                 .length()
-                .ok_or_else(|| format!("Signal {} has no width (string/real type)", path))? as u32;
+                .ok_or_else(|| format!("Signal {} has no width (string/real type)", path))?;
 
             // Get signal from waveform
             let signal = waveform
@@ -216,7 +224,10 @@ fn evaluate_condition_with_width(
             let (result, width) = match (msb, lsb) {
                 (Some(msb), Some(lsb)) => {
                     if msb < lsb {
-                        return Err(format!("Invalid bit range [{}:{}] - msb must be >= lsb", msb, lsb));
+                        return Err(format!(
+                            "Invalid bit range [{}:{}] - msb must be >= lsb",
+                            msb, lsb
+                        ));
                     }
                     // Extract bits [msb:lsb] by:
                     // 1. Shift right by lsb positions
@@ -277,7 +288,7 @@ fn signal_value_to_biguint(signal_value: wellen::SignalValue) -> Result<BigUint,
                 if chunk != 0 {
                     // Each chunk is at position i * 32 bits
                     let chunk_value = BigUint::from(chunk);
-                    value = value | (chunk_value << (i * 32));
+                    value |= chunk_value << (i * 32);
                 }
             }
             Ok(value)
@@ -288,7 +299,7 @@ fn signal_value_to_biguint(signal_value: wellen::SignalValue) -> Result<BigUint,
             for (i, &chunk) in data.iter().enumerate() {
                 if chunk != 0 {
                     let chunk_value = BigUint::from(chunk);
-                    value = value | (chunk_value << (i * 32));
+                    value |= chunk_value << (i * 32);
                 }
             }
             Ok(value)
@@ -299,7 +310,7 @@ fn signal_value_to_biguint(signal_value: wellen::SignalValue) -> Result<BigUint,
             for (i, &chunk) in data.iter().enumerate() {
                 if chunk != 0 {
                     let chunk_value = BigUint::from(chunk);
-                    value = value | (chunk_value << (i * 32));
+                    value |= chunk_value << (i * 32);
                 }
             }
             Ok(value)
@@ -312,7 +323,7 @@ fn signal_value_to_biguint(signal_value: wellen::SignalValue) -> Result<BigUint,
                 Ok(BigUint::from(0u32))
             } else {
                 s.parse::<u64>()
-                    .map(|v| BigUint::from(v))
+                    .map(BigUint::from)
                     .map_err(|_| format!("Cannot convert string '{}' to integer", s))
             }
         }
