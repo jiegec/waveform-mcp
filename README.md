@@ -56,7 +56,6 @@ The server provides 6 MCP tools:
 4. **get_signal_info** - Get metadata about a signal
    - `waveform_id`: ID or alias of the waveform
    - `signal_path`: Hierarchical path to signal
-   - Returns: Signal type, width (in bits), and index range (e.g., "[7:0]")
 
    **Example response:**
    ```
@@ -91,8 +90,8 @@ The server provides 6 MCP tools:
    **Example response:**
    ```
    Found 2 events for condition '!$past(TOP.signal) && TOP.signal' (time range: 0 to 50):
-   Time index 5 (50ns): top.data = 8'h0A
-   Time index 15 (150ns): top.data = 8'hFF
+   Time index 5 (50ns): top.signal = 8'h0A
+   Time index 15 (150ns): top.signal = 8'hFF
    ```
 
    **Supported condition syntax:**
