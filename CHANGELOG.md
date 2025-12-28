@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2025-12-28
+
+### Added
+- **Bitwise operations** to condition search language:
+  - Bitwise AND (`&`), OR (`|`), XOR (`^`), and NOT (`~`) operators
+  - Bit extraction support for accessing individual bits and slices
+- **Streamable HTTP transport** support with CLI option (`--http` flag)
+- Handshake cycle example to documentation
+
+### Changed
+- Migrated condition evaluation from `i64` to `BigUint` for supporting arbitrary-precision integer operations
+
+### Fixed
+- Signal name in `find_conditional_events` example
+- Bitwise operator precedence to match documented precedence rules
+
+### Documentation
+- Added operator precedence rules to QWEN.md
+- Mentioned bitwise operators in condition search documentation
+- Added return value examples for MCP tools in README
+- Added missing `recursive` parameter to `list_signals` documentation
+
 ## [0.2.0] - 2025-12-26
 
 ### Added
