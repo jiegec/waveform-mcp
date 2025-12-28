@@ -24,7 +24,8 @@ The server provides 6 MCP tools:
    - `waveform_id`: ID or alias of the waveform
    - `name_pattern`: Optional substring to filter signals by name (case-insensitive)
    - `hierarchy_prefix`: Optional prefix to filter signals by hierarchy path
-   - `limit`: Optional maximum number of signals to return
+   - `recursive`: Optional flag to include signals from sub-hierarchies (default: false)
+   - `limit`: Optional maximum number of signals to return (default: 100)
 
 3. **read_signal** - Read signal values at specific time indices
    - `waveform_id`: ID or alias of the waveform
