@@ -20,6 +20,11 @@ The server provides 6 MCP tools:
    - `file_path`: Path to .vcd or .fst file
    - `alias`: Optional alias for the waveform (defaults to filename)
 
+   **Example response:**
+   ```
+   Waveform opened successfully with alias: waveform.vcd
+   ```
+
 2. **list_signals** - List all signals in an open waveform
    - `waveform_id`: ID or alias of the waveform
    - `name_pattern`: Optional substring to filter signals by name (case-insensitive)
@@ -27,16 +32,39 @@ The server provides 6 MCP tools:
    - `recursive`: Optional flag to include signals from sub-hierarchies (default: false)
    - `limit`: Optional maximum number of signals to return (default: 100)
 
+   **Example response:**
+   ```
+   Found 3 signals:
+   top.clock
+   top.reset
+   top.data
+   ```
+
 3. **read_signal** - Read signal values at specific time indices
    - `waveform_id`: ID or alias of the waveform
    - `signal_path`: Hierarchical path to signal (e.g., "top.module.signal")
    - `time_index`: Optional single time index to read
    - `time_indices`: Optional array of time indices to read multiple values
 
+   **Example response:**
+   ```
+   Time index 0 (0ns): 0
+   Time index 10 (10ns): 1
+   Time index 20 (20ns): 1
+   ```
+
 4. **get_signal_info** - Get metadata about a signal
    - `waveform_id`: ID or alias of the waveform
    - `signal_path`: Hierarchical path to signal
    - Returns: Signal type, width (in bits), and index range (e.g., "[7:0]")
+
+   **Example response:**
+   ```
+   Signal: top.data
+   Type: Wire
+   Width: 8 bits
+   Index: [7:0]
+   ```
 
 5. **find_signal_events** - Find all signal changes within a time range
    - `waveform_id`: ID or alias of the waveform
@@ -45,12 +73,27 @@ The server provides 6 MCP tools:
    - `end_time_index`: Optional end of time range (default: last time index)
    - `limit`: Optional maximum number of events to return (default: unlimited)
 
+   **Example response:**
+   ```
+   Found 3 events for signal 'top.clock' (time range: 0 to 20):
+   Time index 0 (0ns): 0
+   Time index 10 (10ns): 1
+   Time index 20 (20ns): 0
+   ```
+
 6. **find_conditional_events** - Find events where a condition is satisfied
    - `waveform_id`: ID or alias of waveform
    - `condition`: Conditional expression to evaluate
    - `start_time_index`: Optional start of time range (default: 0)
    - `end_time_index`: Optional end of time range (default: last time index)
    - `limit`: Optional maximum number of events to return (default: 100)
+
+   **Example response:**
+   ```
+   Found 2 events for condition '!$past(TOP.signal) && TOP.signal' (time range: 0 to 50):
+   Time index 5 (50ns): top.data = 8'h0A
+   Time index 15 (150ns): top.data = 8'hFF
+   ```
 
    **Supported condition syntax:**
    - Signal paths (e.g., `TOP.signal`)
