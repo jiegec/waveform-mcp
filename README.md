@@ -238,6 +238,21 @@ cargo build --release
 ```bash
 cargo test
 ```
+
+### Benchmarks
+
+Criterion benches under `benches/waveform_ops.rs` cover the hot paths: hierarchy lookup, signal-event scans, and conditional event evaluation across both VCD and FST inputs.
+
+Generate the fixtures (synthetic VCD/FST pairs written under your system temp directory) and run the benches:
+
+```bash
+cargo run --release --example gen_fixtures
+cargo bench
+```
+
+The fixture generator is parametric (`examples/gen_synthetic.rs`).
+Point it at custom `--modules`, `--signals-per-module`, `--time-steps`, and `--density` values to build your own scenarios.
+
 ## License
 
 [MIT](LICENSE)

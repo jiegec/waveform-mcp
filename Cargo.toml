@@ -44,3 +44,9 @@ lalrpop = "0.23"
 
 [dev-dependencies]
 tempfile = "3.24"
+fst-writer = "0.3"
+criterion = "0.8"
+
+[[bench]]
+name = "waveform_ops"
+harness = false
