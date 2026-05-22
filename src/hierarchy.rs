@@ -71,13 +71,7 @@ pub fn find_var_by_path(hierarchy: &wellen::Hierarchy, path: &str) -> Option<wel
 /// # Returns
 /// `Some(SignalRef)` if signal is found, `None` otherwise.
 pub fn find_signal_by_path(hierarchy: &wellen::Hierarchy, path: &str) -> Option<wellen::SignalRef> {
-    for var in hierarchy.iter_vars() {
-        let signal_path = var.full_name(hierarchy);
-        if signal_path == path {
-            return Some(var.signal_ref());
-        }
-    }
-    None
+    find_var_by_path(hierarchy, path).map(|var_ref| hierarchy[var_ref].signal_ref())
 }
 
 /// Find a scope by its hierarchical path in waveform hierarchy.

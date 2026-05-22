@@ -109,6 +109,81 @@ $enddefinitions $end\n\
 }
 
 #[test]
+fn test_find_signal_by_path_nested() {
+    // Hierarchy with three levels and a shadowed signal name (`clk` exists in
+    // both `top` and `top.sub`) so we can verify the lookup respects scope.
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 1 ! clk $end\n\
+$scope module sub $end\n\
+$var wire 1 @ clk $end\n\
+$var wire 8 # data $end\n\
+$scope module inner $end\n\
+$var wire 1 $ ready $end\n\
+$upscope $end\n\
+$upscope $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+0!\n\
+1@\n\
+b00001010 #\n\
+1$";
+
+    let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    write!(temp_file, "{}", vcd_content).expect("Failed to write VCD content");
+    temp_file.flush().expect("Failed to flush");
+
+    let waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+    let hierarchy = waveform.hierarchy();
+
+    // Lookups at every depth resolve.
+    let top_clk = find_signal_by_path(hierarchy, "top.clk").expect("top.clk should resolve");
+    let sub_clk =
+        find_signal_by_path(hierarchy, "top.sub.clk").expect("top.sub.clk should resolve");
+    let sub_data =
+        find_signal_by_path(hierarchy, "top.sub.data").expect("top.sub.data should resolve");
+    let inner_ready = find_signal_by_path(hierarchy, "top.sub.inner.ready")
+        .expect("top.sub.inner.ready should resolve");
+
+    // Shadowed name resolves to the right scope (top.clk and top.sub.clk are distinct signals).
+    assert_ne!(
+        top_clk, sub_clk,
+        "top.clk and top.sub.clk must refer to different signals"
+    );
+    // And these are all distinct from one another.
+    assert_ne!(top_clk, sub_data);
+    assert_ne!(sub_clk, sub_data);
+    assert_ne!(sub_data, inner_ready);
+
+    // Right leaf name but wrong scope returns None.
+    assert!(
+        find_signal_by_path(hierarchy, "top.data").is_none(),
+        "top.data does not exist (data lives in top.sub)"
+    );
+    assert!(
+        find_signal_by_path(hierarchy, "top.ready").is_none(),
+        "top.ready does not exist (ready lives in top.sub.inner)"
+    );
+    assert!(
+        find_signal_by_path(hierarchy, "top.sub.ready").is_none(),
+        "top.sub.ready does not exist (ready lives one level deeper)"
+    );
+
+    // Wrong root returns None.
+    assert!(
+        find_signal_by_path(hierarchy, "wrong.clk").is_none(),
+        "wrong.clk has no matching root scope"
+    );
+
+    // Malformed paths return None rather than panicking.
+    assert!(find_signal_by_path(hierarchy, "").is_none(), "empty path");
+}
+
+#[test]
 fn test_list_signals_recursive() {
     // Create a VCD file with nested hierarchy
     let vcd_content = "\
