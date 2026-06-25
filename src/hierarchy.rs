@@ -133,11 +133,18 @@ pub(super) fn collect_signals_from_scope(
     recursive: bool,
     name_pattern: Option<&str>,
 ) -> Vec<String> {
-    let mut signals = Vec::new();
     let scope = &hierarchy[scope_ref];
 
-    // Collect variables directly in this scope
-    for var_ref in scope.vars(hierarchy) {
+    // In recursive mode collect vars from this scope and all descendants, otherwise only the vars
+    // declared directly in this scope.
+    let vars: Box<dyn Iterator<Item = wellen::VarRef>> = if recursive {
+        Box::new(scope.all_vars(hierarchy))
+    } else {
+        Box::new(scope.vars(hierarchy))
+    };
+
+    let mut signals = Vec::new();
+    for var_ref in vars {
         let var = &hierarchy[var_ref];
         let path = var.full_name(hierarchy);
 
@@ -151,18 +158,6 @@ pub(super) fn collect_signals_from_scope(
         }
 
         signals.push(path);
-    }
-
-    // If recursive, also collect from child scopes
-    if recursive {
-        for child_ref in scope.scopes(hierarchy) {
-            signals.extend(collect_signals_from_scope(
-                hierarchy,
-                child_ref,
-                true,
-                name_pattern,
-            ));
-        }
     }
 
     signals
