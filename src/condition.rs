@@ -170,7 +170,7 @@ fn evaluate_condition_with_width(
             // Get signal width from hierarchy
             let hierarchy = waveform.hierarchy();
             let width = hierarchy[*var_ref]
-                .length()
+                .length(hierarchy)
                 .ok_or_else(|| format!("Signal {} has no width (string/real type)", path))?;
 
             // Get signal from waveform
@@ -200,7 +200,7 @@ fn evaluate_condition_with_width(
             // Get signal width from hierarchy
             let hierarchy = waveform.hierarchy();
             let full_width = hierarchy[*var_ref]
-                .length()
+                .length(hierarchy)
                 .ok_or_else(|| format!("Signal {} has no width (string/real type)", path))?;
 
             // Get signal from waveform
@@ -278,44 +278,30 @@ fn evaluate_condition_with_width(
 }
 
 /// Convert a signal value to BigUint for comparison.
-fn signal_value_to_biguint(signal_value: wellen::SignalValue) -> Result<BigUint, String> {
+fn signal_value_to_biguint(signal_value: wellen::SignalValueRef) -> Result<BigUint, String> {
     match signal_value {
-        wellen::SignalValue::Binary(data, _) => {
-            // wellen stores the value as a Vec<u32> where each element is a chunk of bits
-            // We need to combine these chunks into a single BigUint
+        wellen::SignalValueRef::BitVec(bits) => {
+            // Fold the value's raw encoded bytes in as little-endian 32-bit chunks. This only
+            // recovers the numeric value for 2-state values up to one byte wide: wider values get
+            // their bytes spaced 32 bits apart instead of 8, and 4/9-state values are an x/z-aware
+            // encoding (2 or 4 bits per signal bit) rather than the plain value.
+            let mut scratch = Vec::new();
+            let data: &[u8] = match bits.be_bytes() {
+                Some(bytes) => bytes,
+                None => {
+                    bits.append_to_vec(&mut scratch);
+                    &scratch
+                }
+            };
             let mut value = BigUint::from(0u32);
             for (i, &chunk) in data.iter().enumerate() {
                 if chunk != 0 {
-                    // Each chunk is at position i * 32 bits
-                    let chunk_value = BigUint::from(chunk);
-                    value |= chunk_value << (i * 32);
+                    value |= BigUint::from(chunk) << (i * 32);
                 }
             }
             Ok(value)
         }
-        wellen::SignalValue::FourValue(data, _) => {
-            // Same as Binary for FourValue
-            let mut value = BigUint::from(0u32);
-            for (i, &chunk) in data.iter().enumerate() {
-                if chunk != 0 {
-                    let chunk_value = BigUint::from(chunk);
-                    value |= chunk_value << (i * 32);
-                }
-            }
-            Ok(value)
-        }
-        wellen::SignalValue::NineValue(data, _) => {
-            // Same as Binary for NineValue
-            let mut value = BigUint::from(0u32);
-            for (i, &chunk) in data.iter().enumerate() {
-                if chunk != 0 {
-                    let chunk_value = BigUint::from(chunk);
-                    value |= chunk_value << (i * 32);
-                }
-            }
-            Ok(value)
-        }
-        wellen::SignalValue::String(s) => {
+        wellen::SignalValueRef::String(s) => {
             // Handle special string values for boolean context
             if s == "1" || s.eq_ignore_ascii_case("true") {
                 Ok(BigUint::from(1u32))
@@ -327,8 +313,8 @@ fn signal_value_to_biguint(signal_value: wellen::SignalValue) -> Result<BigUint,
                     .map_err(|_| format!("Cannot convert string '{}' to integer", s))
             }
         }
-        wellen::SignalValue::Real(r) => Ok(BigUint::from(r as u64)),
-        wellen::SignalValue::Event => Err("Event signal cannot be compared".to_string()),
+        wellen::SignalValueRef::Real(r) => Ok(BigUint::from(r as u64)),
+        wellen::SignalValueRef::Event => Err("Event signal cannot be compared".to_string()),
     }
 }
 

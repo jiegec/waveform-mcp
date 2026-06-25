@@ -33,7 +33,8 @@ b000000001";
     let hierarchy = waveform.hierarchy();
 
     // Check full names of variables
-    for var in hierarchy.iter_vars() {
+    for var_ref in hierarchy.all_vars() {
+        let var = &hierarchy[var_ref];
         let full_name = var.full_name(hierarchy);
         println!("Variable full name: {}", full_name);
         assert!(!full_name.is_empty(), "Full name should not be empty");
@@ -65,7 +66,8 @@ b000000001";
 
     // Simulate list_signals function
     let mut signals = Vec::new();
-    for var in hierarchy.iter_vars() {
+    for var_ref in hierarchy.all_vars() {
+        let var = &hierarchy[var_ref];
         let path = var.full_name(hierarchy);
         signals.push(format!("{} ({})", path, var.signal_ref().index()));
     }
@@ -95,8 +97,8 @@ $enddefinitions $end\n\
     let hierarchy = waveform.hierarchy();
 
     // Debug: print all available signals
-    for var in hierarchy.iter_vars() {
-        println!("Signal path: {}", var.full_name(hierarchy));
+    for var_ref in hierarchy.all_vars() {
+        println!("Signal path: {}", hierarchy[var_ref].full_name(hierarchy));
     }
 
     // Test finding existing signal - use the correct path format
@@ -218,8 +220,8 @@ $enddefinitions $end\n\
 
     // Test recursive mode (default): should find all signals at all levels
     let mut all_signals: Vec<String> = Vec::new();
-    for var in hierarchy.iter_vars() {
-        all_signals.push(var.full_name(hierarchy));
+    for var_ref in hierarchy.all_vars() {
+        all_signals.push(hierarchy[var_ref].full_name(hierarchy));
     }
     assert!(
         !all_signals.is_empty(),

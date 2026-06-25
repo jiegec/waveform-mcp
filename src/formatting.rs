@@ -49,14 +49,24 @@ pub fn format_time(time_value: u64, timescale: Option<&wellen::Timescale>) -> St
 /// Format mimics Verilog representation:
 /// - Short signals (<= 4 bits): binary format like `3'b101`
 /// - Longer signals: hex format like `16'h1a2b`
-pub fn format_signal_value(signal_value: wellen::SignalValue) -> String {
+pub fn format_signal_value(signal_value: wellen::SignalValueRef) -> String {
     match signal_value {
-        wellen::SignalValue::Event => "Event".to_string(),
-        wellen::SignalValue::Binary(data, bits) => format_binary_verilog(data, bits),
-        wellen::SignalValue::FourValue(data, _) => format!("{:?}", data),
-        wellen::SignalValue::NineValue(data, _) => format!("{:?}", data),
-        wellen::SignalValue::String(s) => s.to_string(),
-        wellen::SignalValue::Real(r) => format!("{}", r),
+        wellen::SignalValueRef::Event => "Event".to_string(),
+        wellen::SignalValueRef::BitVec(bits) => format_bit_vec_verilog(bits),
+        wellen::SignalValueRef::String(s) => s.to_string(),
+        wellen::SignalValueRef::Real(r) => format!("{}", r),
+    }
+}
+
+/// Format a bit-vector value in Verilog style.
+///
+/// Two-state vectors are rendered as binary (short) or hex (wide); vectors
+/// containing four- or nine-state bits (x, z, ...) are rendered as a binary
+/// bit string since they cannot be expressed in hex.
+fn format_bit_vec_verilog(bits: wellen::BitVecRef) -> String {
+    match bits.be_bytes() {
+        Some(bytes) => format_binary_verilog(bytes, bits.width()),
+        None => format!("{}'b{}", bits.width(), bits.bit_string()),
     }
 }
 

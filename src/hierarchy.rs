@@ -202,13 +202,13 @@ pub(super) fn collect_signals_from_scope(
 
 fn render_item(
     hierarchy: &wellen::Hierarchy,
-    item: wellen::ScopeOrVarRef,
+    item: wellen::ItemRef,
     depth: usize,
     child_depth: usize,
     show_full_name: bool,
     renderer: &mut HierarchyRenderer,
 ) {
-    if let wellen::ScopeOrVarRef::Scope(scope_ref) = item {
+    if let wellen::ItemRef::Scope(scope_ref) = item {
         render_scope(
             hierarchy,
             scope_ref,

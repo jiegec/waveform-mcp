@@ -57,14 +57,12 @@ fn load(path: &Path) -> wellen::simple::Waveform {
 // A path that is guaranteed to exist in every preset (top.mod_0.sig_0).
 const PROBE_SIGNAL: &str = "top.mod_0.sig_0";
 
-// Last var encountered in iter_vars() order — exercises the deep end of the
+// Last var encountered in all_vars() order — exercises the deep end of the
 // hierarchy lookup so a future regression to a linear scan would show up here.
 fn last_signal_path(wf: &wellen::simple::Waveform) -> String {
     let h = wf.hierarchy();
-    h.iter_vars()
-        .last()
-        .expect("fixture has at least one var")
-        .full_name(h)
+    let last = h.all_vars().last().expect("fixture has at least one var");
+    h[last].full_name(h)
 }
 
 fn bench_find_signal_by_path(c: &mut Criterion) {

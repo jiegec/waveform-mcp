@@ -140,7 +140,7 @@ pub fn get_signal_metadata(
 
     let var = &hierarchy[var_ref];
 
-    let width_info = match var.length() {
+    let width_info = match var.length(hierarchy) {
         Some(len) => format!("{} bits", len),
         None => "variable length (string/real)".to_string(),
     };
