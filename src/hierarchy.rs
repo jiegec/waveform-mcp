@@ -52,13 +52,9 @@ impl HierarchyRenderer {
 /// # Returns
 /// `Some(VarRef)` if signal is found, `None` otherwise.
 pub fn find_var_by_path(hierarchy: &wellen::Hierarchy, path: &str) -> Option<wellen::VarRef> {
-    let parts: Vec<&str> = path.split('.').collect();
-    if parts.len() > 1 {
-        let path_parts = &parts[..parts.len() - 1];
-        let name = parts[parts.len() - 1];
-        hierarchy.lookup_var(path_parts, name)
-    } else {
-        hierarchy.lookup_var(&[], path)
+    match hierarchy.lookup_item_by_name(path)? {
+        wellen::ItemRef::Var(v) => Some(v),
+        wellen::ItemRef::Scope(_) => None,
     }
 }
 
@@ -83,38 +79,10 @@ pub fn find_signal_by_path(hierarchy: &wellen::Hierarchy, path: &str) -> Option<
 /// # Returns
 /// `Some(ScopeRef)` if scope is found, `None` otherwise.
 pub fn find_scope_by_path(hierarchy: &wellen::Hierarchy, path: &str) -> Option<wellen::ScopeRef> {
-    for scope_ref in hierarchy.scopes() {
-        let scope = &hierarchy[scope_ref];
-        let scope_path = scope.full_name(hierarchy);
-        if scope_path == path {
-            return Some(scope_ref);
-        }
-        // Recursively check child scopes
-        if let Some(child_ref) = find_scope_by_path_recursive(hierarchy, scope_ref, path) {
-            return Some(child_ref);
-        }
+    match hierarchy.lookup_item_by_name(path)? {
+        wellen::ItemRef::Scope(s) => Some(s),
+        wellen::ItemRef::Var(_) => None,
     }
-    None
-}
-
-fn find_scope_by_path_recursive(
-    hierarchy: &wellen::Hierarchy,
-    parent_ref: wellen::ScopeRef,
-    target_path: &str,
-) -> Option<wellen::ScopeRef> {
-    let parent = &hierarchy[parent_ref];
-    for child_ref in parent.scopes(hierarchy) {
-        let child = &hierarchy[child_ref];
-        let child_path = child.full_name(hierarchy);
-        if child_path == target_path {
-            return Some(child_ref);
-        }
-        // Recursively check child scopes
-        if let Some(found) = find_scope_by_path_recursive(hierarchy, child_ref, target_path) {
-            return Some(found);
-        }
-    }
-    None
 }
 
 /// Read the waveform module hierarchy as an indented tree.
