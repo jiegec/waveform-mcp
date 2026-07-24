@@ -49,18 +49,24 @@ pub fn format_time(time_value: u64, timescale: Option<&wellen::Timescale>) -> St
 /// Format mimics Verilog representation:
 /// - Short signals (<= 4 bits): binary format like `3'b101`
 /// - Longer signals: hex format like `16'h1a2b`
-pub fn format_signal_value(signal_value: wellen::SignalValue) -> String {
+pub fn format_signal_value(signal_value: wellen::SignalValueRef<'_>) -> String {
     match signal_value {
-        wellen::SignalValue::Event => "Event".to_string(),
-        wellen::SignalValue::Binary(data, bits) => format_binary_verilog(data, bits),
-        wellen::SignalValue::FourValue(data, _) => format!("{:?}", data),
-        wellen::SignalValue::NineValue(data, _) => format!("{:?}", data),
-        wellen::SignalValue::String(s) => s.to_string(),
-        wellen::SignalValue::Real(r) => format!("{}", r),
+        wellen::SignalValueRef::Event => "Event".to_string(),
+        wellen::SignalValueRef::BitVec(bv) => {
+            let bits = bv.width();
+            if bv.states() == wellen::States::Two
+                && let Some(data) = bv.be_bytes()
+            {
+                return format_binary_verilog(data, bits);
+            }
+            bv.bit_string()
+        }
+        wellen::SignalValueRef::String(s) => s.to_string(),
+        wellen::SignalValueRef::Real(r) => format!("{}", r),
     }
 }
 
-/// Format a binary value (Vec<u8>) in Verilog style.
+/// Format a binary value (&[u8]) in Verilog style.
 fn format_binary_verilog(data: &[u8], bits: u32) -> String {
     // For short signals (<= 4 bits), use binary format
     if bits <= 4 {

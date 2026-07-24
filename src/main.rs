@@ -176,7 +176,7 @@ impl WaveformHandler {
         let path = PathBuf::from(&args.file_path);
 
         if !path.exists() {
-            return Ok(CallToolResult::error(vec![Content::text(format!(
+            return Ok(CallToolResult::error(vec![ContentBlock::text(format!(
                 "File not found: {}",
                 args.file_path
             ))]));
@@ -185,7 +185,7 @@ impl WaveformHandler {
         let waveform = match wellen::simple::read(&path) {
             Ok(w) => w,
             Err(e) => {
-                return Ok(CallToolResult::error(vec![Content::text(format!(
+                return Ok(CallToolResult::error(vec![ContentBlock::text(format!(
                     "Failed to read waveform: {}",
                     e
                 ))]));
@@ -202,7 +202,7 @@ impl WaveformHandler {
         let mut waveforms = self.waveforms.write().await;
         waveforms.insert(alias.clone(), waveform);
 
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "Waveform opened successfully with alias: {}",
             alias
         ))]))
@@ -233,7 +233,7 @@ impl WaveformHandler {
             args.limit,
         );
 
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "Found {} signals:\n{}",
             signals.len(),
             signals.join("\n")
@@ -273,7 +273,7 @@ impl WaveformHandler {
             lines.join("\n")
         };
 
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "{}\n{}",
             header, body
         ))]))
@@ -307,7 +307,7 @@ impl WaveformHandler {
         } else if let Some(index) = args.time_index {
             vec![index]
         } else {
-            return Ok(CallToolResult::error(vec![Content::text(
+            return Ok(CallToolResult::error(vec![ContentBlock::text(
                 "Either time_index or time_indices must be provided".to_string(),
             )]));
         };
@@ -315,7 +315,7 @@ impl WaveformHandler {
         let results = read_signal_values(waveform, signal_ref, &indices_to_read)
             .map_err(|e| McpError::internal_error(e, None))?;
 
-        Ok(CallToolResult::success(vec![Content::text(
+        Ok(CallToolResult::success(vec![ContentBlock::text(
             results.join("\n"),
         )]))
     }
@@ -339,7 +339,7 @@ impl WaveformHandler {
         let info = get_signal_metadata(hierarchy, &args.signal_path)
             .map_err(|e| McpError::invalid_params(e, None))?;
 
-        Ok(CallToolResult::success(vec![Content::text(info)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(info)]))
     }
 
     #[tool(
@@ -374,7 +374,7 @@ impl WaveformHandler {
         let events = find_signal_events(waveform, signal_ref, start_idx, end_idx, limit)
             .map_err(|e| McpError::internal_error(e, None))?;
 
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "Found {} events for signal '{}' (time range: {} to {}):\n{}",
             events.len(),
             args.signal_path,
@@ -408,7 +408,7 @@ impl WaveformHandler {
         let events = find_conditional_events(waveform, &args.condition, start_idx, end_idx, limit)
             .map_err(|e| McpError::invalid_params(e, None))?;
 
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "Found {} events for condition '{}' (time range: {} to {}):\n{}",
             events.len(),
             args.condition,
@@ -427,11 +427,11 @@ impl WaveformHandler {
         let mut waveforms = self.waveforms.write().await;
 
         match waveforms.remove(&args.waveform_id) {
-            Some(_) => Ok(CallToolResult::success(vec![Content::text(format!(
+            Some(_) => Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                 "Waveform '{}' closed successfully",
                 args.waveform_id
             ))])),
-            None => Ok(CallToolResult::error(vec![Content::text(format!(
+            None => Ok(CallToolResult::error(vec![ContentBlock::text(format!(
                 "Waveform not found: {}",
                 args.waveform_id
             ))])),

@@ -71,7 +71,8 @@ pub fn find_var_by_path(hierarchy: &wellen::Hierarchy, path: &str) -> Option<wel
 /// # Returns
 /// `Some(SignalRef)` if signal is found, `None` otherwise.
 pub fn find_signal_by_path(hierarchy: &wellen::Hierarchy, path: &str) -> Option<wellen::SignalRef> {
-    for var in hierarchy.iter_vars() {
+    for var_ref in hierarchy.all_vars() {
+        let var = &hierarchy[var_ref];
         let signal_path = var.full_name(hierarchy);
         if signal_path == path {
             return Some(var.signal_ref());
@@ -208,13 +209,13 @@ pub(super) fn collect_signals_from_scope(
 
 fn render_item(
     hierarchy: &wellen::Hierarchy,
-    item: wellen::ScopeOrVarRef,
+    item: wellen::ItemRef,
     depth: usize,
     child_depth: usize,
     show_full_name: bool,
     renderer: &mut HierarchyRenderer,
 ) {
-    if let wellen::ScopeOrVarRef::Scope(scope_ref) = item {
+    if let wellen::ItemRef::Scope(scope_ref) = item {
         render_scope(
             hierarchy,
             scope_ref,

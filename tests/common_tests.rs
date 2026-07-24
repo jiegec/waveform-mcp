@@ -60,7 +60,7 @@ b000000001";
     );
 
     // Check that we have signals
-    let vars: Vec<_> = hierarchy.iter_vars().collect();
+    let vars: Vec<_> = hierarchy.all_vars().collect();
     println!("Vars collected: {:?}", vars);
     assert!(!vars.is_empty(), "No variables found in VCD file");
 }
