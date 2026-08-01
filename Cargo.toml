@@ -1,6 +1,6 @@
 [package]
 name = "waveform-mcp"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 description = "MCP server for reading VCD/FST waveform files using the wellen library"
 license = "MIT"

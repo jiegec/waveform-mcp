@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-01
+
+### Changed
+- Improved signal lookup performance
+- Updated dependencies
+- Four- and nine-state signal values are now rendered as Verilog-style ASCII bit strings (e.g. `4'b10xz`)
+
 ## [0.5.0] - 2026-05-04
 
 ### Added
@@ -112,7 +119,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_signal_info` - Get signal metadata
 - `find_signal_events` - Find signal changes in time range
 
-[unreleased]: https://github.com/jiegec/waveform-mcp/compare/v0.5.0...HEAD
+[unreleased]: https://github.com/jiegec/waveform-mcp/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/jiegec/waveform-mcp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jiegec/waveform-mcp/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/jiegec/waveform-mcp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jiegec/waveform-mcp/compare/v0.2.0...v0.3.0
