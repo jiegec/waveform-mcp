@@ -441,8 +441,8 @@ impl WaveformHandler {
 
 #[tool_handler]
 impl ServerHandler for WaveformHandler {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+    fn get_info(&self) -> ServerConfig {
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_protocol_version(ProtocolVersion::V_2025_06_18)
             .with_server_info(Implementation::from_build_env())
             .with_instructions("MCP server for reading VCD/FST waveform files using the wellen library. Available tools: open_waveform, close_waveform, list_signals, read_hierarchy, read_signal, get_signal_info, find_signal_events, find_conditional_events.")
