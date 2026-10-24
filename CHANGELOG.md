@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-24
+
+### Breaking
+- `list_signals` (library) now takes a compiled `SignalMatcher` instead of a `name_pattern`
+  string; use `SignalMatcher::single(pattern, mode)` or `SignalMatcher::all()`
+- MCP `list_signals`: `name_pattern` was renamed to `pattern` (still accepted as an alias) and
+  `match_mode` is a typed enum; `recursive` defaults to true as documented
+- CLI: `list_signals` takes `--contains` / `--glob` / `--regex` instead of `--pattern` alone,
+  `-h` means help, and an already open waveform id is no longer silently replaced
+
 ### Added
 - CLI options accept the `--flag=value` form (e.g. `--glob='*bank*'`, `--limit=-1`), which also
   makes values starting with `-` possible (`--contains=-h`); a `-h` used as an option value is
@@ -172,7 +182,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_signal_info` - Get signal metadata
 - `find_signal_events` - Find signal changes in time range
 
-[unreleased]: https://github.com/jiegec/waveform-mcp/compare/v0.6.0...HEAD
+[unreleased]: https://github.com/jiegec/waveform-mcp/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/jiegec/waveform-mcp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/jiegec/waveform-mcp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jiegec/waveform-mcp/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/jiegec/waveform-mcp/compare/v0.3.0...v0.4.0
