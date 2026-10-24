@@ -12,12 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`match_mode: "regex"`, CLI `--regex`) signal path matching
 - Multiple `list_signals` patterns of the same mode can be given at once; they are OR-ed together
 - A hint is printed when a substring pattern contains glob wildcards but matched nothing
-
-### Added
 - Not-found errors now list the available names, and suggest the closest match for typos
   (waveform ids, signal paths and scopes)
 - `open_waveform` suggests similarly named files (same extension preferred) when the given path
   does not exist
+- `find_conditional_events` suggests close signal paths when the condition references an unknown
+  signal
 - `list_signals` suggests close signal paths when nothing matches, including when a glob or regex
   pattern was mistyped or when glob wildcards were used in substring mode
 - `waveform-cli --help`/`-h`, `waveform-cli help <command>` and `waveform-cli <command> --help`

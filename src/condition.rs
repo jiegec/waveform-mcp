@@ -2,6 +2,7 @@
 
 use super::{
     formatting::format_signal_value, formatting::format_time, hierarchy::find_var_by_path,
+    hierarchy::signal_not_found_message,
 };
 use lalrpop_util::lalrpop_mod;
 use num_bigint::BigUint;
@@ -453,7 +454,7 @@ pub fn find_conditional_events(
     let mut signal_refs = Vec::new();
     for signal_name in &signal_names {
         let var_ref = find_var_by_path(hierarchy, signal_name)
-            .ok_or_else(|| format!("Signal not found: {}", signal_name))?;
+            .ok_or_else(|| signal_not_found_message(hierarchy, signal_name))?;
         let signal_ref = hierarchy[var_ref].signal_ref();
         signal_cache.insert(signal_name.clone(), var_ref);
         signal_refs.push(signal_ref);

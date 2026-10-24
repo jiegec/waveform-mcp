@@ -1235,3 +1235,30 @@ $enddefinitions $end\n\
         "unexpected error: {error}"
     );
 }
+
+#[test]
+fn test_find_conditional_events_suggests_signal_names() {
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 1 ! abc_bank $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+0!";
+
+    let mut temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::io::Write::write(&mut temp_file, vcd_content.as_bytes()).expect("Failed to write VCD");
+    std::io::Write::flush(&mut temp_file).expect("Failed to flush");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    let error = find_conditional_events(&mut waveform, "top.abc_bnk == 1'b1", 0, 0, -1)
+        .expect_err("unknown signal should be reported");
+    assert!(
+        error.contains("Did you mean 'top.abc_bank'"),
+        "unexpected error: {error}"
+    );
+}
