@@ -74,6 +74,11 @@ fn similarity(query_lower: &str, candidate: &str) -> Option<f64> {
         return Some(coverage_score(query_len, leaf_len));
     }
 
+    // All query segments matched in order, e.g. `tb.abc` for `tb.dut.abc_bank`.
+    if let Some(score) = token_score(query_lower, &candidate_lower) {
+        return Some(score);
+    }
+
     // Characters in order but not adjacent, e.g. `bnk` for `abc_bank`.
     if is_subsequence(query_lower, leaf) {
         return Some(0.55 + 0.35 * (query_len as f64 / leaf_len as f64));
@@ -91,6 +96,24 @@ fn similarity(query_lower: &str, candidate: &str) -> Option<f64> {
     let score = normalized_damerau_levenshtein(query_lower, &candidate_lower)
         .max(normalized_damerau_levenshtein(query_lower, leaf));
     (score >= MIN_SCORE).then_some(score)
+}
+
+/// Score a candidate in which every segment of the query appears, in order.
+///
+/// Paths are written as `tb.dut.abc_bank`, and people often type a prefix of each segment
+/// (`tb.abc`) or skip middle scopes. Each query segment must be a prefix of some candidate
+/// segment, and the matched segments must keep their relative order.
+fn token_score(query_lower: &str, candidate_lower: &str) -> Option<f64> {
+    let mut candidate_segments = candidate_lower.split('.');
+    let mut covered = 0_usize;
+
+    for needle in query_lower.split('.').filter(|needle| !needle.is_empty()) {
+        let segment = candidate_segments.find(|segment| segment.starts_with(needle))?;
+        covered += needle.chars().count().min(segment.chars().count());
+    }
+
+    let candidate_len = candidate_lower.chars().count().max(1);
+    Some(0.7 + 0.25 * (covered as f64 / candidate_len as f64))
 }
 
 /// Score for a candidate that contains the query, scaled by how much of it the query covers.
@@ -270,6 +293,35 @@ mod tests {
             did_you_mean("bnk", &candidates),
             vec!["tb.dut.abc_bank".to_string()]
         );
+    }
+
+    #[test]
+    fn suggests_matched_path_segments() {
+        let candidates = names(&["tb.dut.abc_bank", "tb.clk", "tb.abc_ram"]);
+
+        // Skipping a middle scope still finds the signals.
+        let suggestions = did_you_mean("tb.abc", &candidates);
+        assert!(
+            suggestions.contains(&"tb.dut.abc_bank".to_string()),
+            "suggestions: {suggestions:?}"
+        );
+        assert!(
+            suggestions.contains(&"tb.abc_ram".to_string()),
+            "suggestions: {suggestions:?}"
+        );
+
+        // Segment prefixes are matched, not just whole-path substrings.
+        assert_eq!(
+            did_you_mean("tb.dut.abc_b", &candidates),
+            vec!["tb.dut.abc_bank".to_string()]
+        );
+    }
+
+    #[test]
+    fn out_of_order_segments_do_not_match() {
+        let candidates = names(&["tb.dut.abc_bank"]);
+        // `abc` comes after `dut` in the candidate, so it cannot match in this order.
+        assert!(did_you_mean("abc.tb", &candidates).is_empty());
     }
 
     #[test]

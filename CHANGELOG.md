@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unknown CLI commands suggest the closest command name and list the available ones
 - Not-found errors now list the available names, and suggest the closest match for typos
   (waveform ids, signal paths and scopes)
+- Suggestions also match path segments in order, so `tb.abc` finds `tb.dut.abc_bank`
 - `open_waveform` suggests similarly named files (same extension preferred) when the given path
   does not exist
 - `find_conditional_events` suggests close signal paths when the condition references an unknown
