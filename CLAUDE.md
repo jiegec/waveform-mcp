@@ -66,10 +66,15 @@ waveform-cli open_waveform test.vcd -- list_signals test.vcd --glob '*bank*' --r
 waveform-cli open_waveform test.vcd -- read_signal test.vcd top.clk --time-index 0
 ```
 
+`waveform-cli --help` (or `-h`), `waveform-cli help <command>` and `waveform-cli <command> --help`
+print the general or per-command help text; `--version`/`-V` prints the version. Help text lives in
+`usage_text()` / `command_help()` in `src/cli_parser.rs`.
+
 **CLI Commands:**
 - `open_waveform <path> [--alias <name>]` - Open waveform file
 - `close_waveform <id>` - Close waveform
 - `list_signals <id> [--contains <p>] [--glob <p>] [--regex <p>] [--hierarchy <h>] [--recursive <bool>] [--limit <n>]`
+  - note: `-h` now means help, use `--hierarchy` for the scope filter
   - `--contains`/`--pattern`/`-p` = substring (default), `--glob`/`-g` = glob, `--regex`/`-x` = regex
   - the three flags are mutually exclusive (the flag selects the mode); repeat one flag to OR patterns
 - `read_hierarchy <id> [--scope <scope>] [--recursive <bool>] [--limit <n>]`

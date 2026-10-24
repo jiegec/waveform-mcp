@@ -15,63 +15,25 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use waveform_mcp::{
-    Command, SignalMatcher, find_conditional_events, find_signal_by_path, find_signal_events,
-    get_signal_metadata, glob_hint, list_signals, parse_args, read_hierarchy, read_signal_values,
+    Command, SignalMatcher, command_help, find_conditional_events, find_signal_by_path,
+    find_signal_events, get_signal_metadata, glob_hint, help_request, list_signals, parse_args,
+    read_hierarchy, read_signal_values, usage_text,
 };
 
-fn print_usage() {
-    println!("waveform-cli - Command-line interface for waveform analysis");
-    println!();
-    println!("Usage: waveform-cli <command1> [args...] [-- <command2> [args...] ...]");
-    println!();
-    println!("Commands can be chained using '--' as a separator.");
-    println!();
-    println!("Commands:");
-    println!("  open_waveform <file_path> [--alias <alias>]");
-    println!("    Open a VCD or FST waveform file");
-    println!();
-    println!("  close_waveform <waveform_id>");
-    println!("    Close a waveform and free its memory");
-    println!();
-    println!(
-        "  list_signals <waveform_id> [--contains <p>] [--glob <p>] [--regex <p>] [--hierarchy <prefix>] [--recursive <true|false>] [--limit <n>]"
-    );
-    println!("    List signals matching optional path patterns (substring/glob/regex, OR-ed)");
-    println!();
-    println!(
-        "  read_hierarchy <waveform_id> [--scope <scope>] [--recursive <true|false>] [--limit <n>]"
-    );
-    println!("    Read the waveform module hierarchy as an indented tree");
-    println!();
-    println!(
-        "  read_signal <waveform_id> <signal_path> [--time-index <idx> | --time-indices <idx1,idx2,...>]"
-    );
-    println!("    Read signal values at specific time indices");
-    println!();
-    println!("  get_signal_info <waveform_id> <signal_path>");
-    println!("    Get metadata about a signal");
-    println!();
-    println!(
-        "  find_signal_events <waveform_id> <signal_path> [--start <idx>] [--end <idx>] [--limit <n>]"
-    );
-    println!("    Find all changes (events) of a signal in a time range");
-    println!();
-    println!(
-        "  find_conditional_events <waveform_id> <condition> [--start <idx>] [--end <idx>] [--limit <n>]"
-    );
-    println!("    Find events where a condition is satisfied");
-    println!("    Condition syntax supports: signal paths, ~ (NOT), & (AND), | (OR),");
-    println!("    ^ (XOR), &&, ||, ==, !=, $past(), bit extraction, Verilog literals");
-    println!();
-    println!("Examples:");
-    println!("  waveform-cli open_waveform test.vcd");
-    println!(
-        "  waveform-cli open_waveform test.fst --alias mywave -- list_signals mywave --glob '*bank*'"
-    );
-    println!("  waveform-cli open_waveform test.vcd -- read_signal test top.clk --time-index 0");
-    println!(
-        "  waveform-cli open_waveform test.vcd -- find_signal_events test top.reset --limit 10"
-    );
+/// Print the help text for `command`, or the general usage text when `None`.
+fn print_help(command: Option<&str>) {
+    match command {
+        None => print!("{}", usage_text()),
+        Some("help") => print!("{}", usage_text()),
+        Some(name) => match command_help(name) {
+            Some(text) => print!("{}", text),
+            None => {
+                eprintln!("Unknown command '{}'\n", name);
+                eprint!("{}", usage_text());
+                std::process::exit(1);
+            }
+        },
+    }
 }
 
 struct WaveformStore {
@@ -306,8 +268,18 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     if args.is_empty() {
-        print_usage();
+        eprint!("{}", usage_text());
         std::process::exit(1);
+    }
+
+    if args[0] == "--version" || args[0] == "-V" {
+        println!("waveform-cli {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+
+    if let Some(command) = help_request(&args) {
+        print_help(command.as_deref());
+        return;
     }
 
     let commands = match parse_args(args) {

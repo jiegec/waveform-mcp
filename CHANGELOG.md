@@ -13,7 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multiple `list_signals` patterns of the same mode can be given at once; they are OR-ed together
 - A hint is printed when a substring pattern contains glob wildcards but matched nothing
 
+### Added
+- `waveform-cli --help`/`-h`, `waveform-cli help <command>` and `waveform-cli <command> --help`
+  print general or per-command help; `--version`/`-V` prints the version
+
 ### Changed
+- CLI `-h` now means help; the `list_signals` scope filter is `--hierarchy` only
 - The `list_signals` MCP parameter `name_pattern` was renamed to `pattern` (`name_pattern`
   is still accepted as an alias)
 - `list_signals` now reports invalid glob/regex patterns as errors instead of returning nothing

@@ -86,6 +86,205 @@ pub fn split_command_groups(args: &[String]) -> Vec<Vec<String>> {
     groups
 }
 
+/// The general usage/help text.
+pub fn usage_text() -> String {
+    [
+        concat!(
+            "waveform-cli ",
+            env!("CARGO_PKG_VERSION"),
+            " - command-line interface for reading and analyzing VCD/FST waveforms"
+        ),
+        "",
+        "Usage:",
+        "  waveform-cli <command> [args...] [-- <command> [args...] ...]",
+        "  waveform-cli help [<command>]",
+        "",
+        "Commands can be chained with '--'; opened waveforms stay available to the",
+        "commands that follow in the chain.",
+        "",
+        "Commands:",
+        "  open_waveform            Open a VCD/FST waveform file",
+        "  close_waveform           Close a waveform and free its memory",
+        "  list_signals             List signals, optionally filtered by path patterns",
+        "  read_hierarchy           Show the module hierarchy as an indented tree",
+        "  read_signal              Read signal values at given time indices",
+        "  get_signal_info          Show signal type, width and index range",
+        "  find_signal_events       Find every change of a signal in a time range",
+        "  find_conditional_events  Find events where an expression holds",
+        "",
+        "Options:",
+        "  -h, --help     Show this help; 'help <command>' shows details for a command",
+        "  -V, --version  Show the version",
+        "",
+        "Signal path patterns (list_signals):",
+        "  --contains <p>  case-insensitive substring match (default; --pattern is an alias)",
+        "  --glob <p>      case-insensitive glob over the whole path, e.g. '*bank*'",
+        "  --regex <p>     regular expression, case-insensitive unless '(?-i)' is used",
+        "  The flag selects the match mode and can be repeated to OR several patterns.",
+        "",
+        "Examples:",
+        "  waveform-cli open_waveform test.vcd",
+        "  waveform-cli open_waveform test.vcd -- list_signals test.vcd --glob '*bank*'",
+        "  waveform-cli open_waveform test.vcd -- list_signals test.vcd --contains clk --hierarchy tb.dut",
+        "  waveform-cli open_waveform test.vcd -- read_signal test.vcd tb.clk --time-index 0",
+        "  waveform-cli open_waveform test.vcd -- find_signal_events test.vcd tb.reset --limit 10",
+        "  waveform-cli help list_signals",
+    ]
+    .join("\n")
+        + "\n"
+}
+
+/// Detailed help for a single command, or `None` if the command is unknown.
+pub fn command_help(name: &str) -> Option<String> {
+    let text = match name {
+        "open_waveform" => {
+            r#"Usage: waveform-cli open_waveform <file_path> [--alias <name>]
+
+Open a VCD or FST waveform and keep it in memory for the rest of the chain.
+
+Arguments:
+  <file_path>         Path to a .vcd or .fst file
+
+Options:
+  -a, --alias <name>  Waveform id to use instead of the file name; this is the id that
+                      later commands expect as <waveform_id>
+"#
+        }
+        "close_waveform" => {
+            r#"Usage: waveform-cli close_waveform <waveform_id>
+
+Close a waveform and free its memory.
+
+Arguments:
+  <waveform_id>  Id or alias of an opened waveform
+"#
+        }
+        "list_signals" => {
+            r#"Usage: waveform-cli list_signals <waveform_id> [patterns] [options]
+
+List the full path of every signal (e.g. tb.dut.abc_bank) that matches the patterns.
+Without patterns every signal is listed.
+
+Patterns (repeatable, OR-ed, one mode per command, all case-insensitive):
+  -p, --contains <p>  Substring match; --pattern is an alias
+  -g, --glob <p>      Glob over the whole path: '*bank*', 'tb.*.clk', 'bus[0-9]'
+  -x, --regex <p>     Regular expression; use '(?-i)' to make it case-sensitive
+
+Options:
+  --hierarchy <prefix>      Only list signals below this scope, e.g. tb.dut
+  -r, --recursive <bool>    Include signals from sub-scopes (default: true)
+  -l, --limit <n>           Maximum number of signals, -1 for unlimited (default: 100)
+
+Examples:
+  waveform-cli list_signals wave --contains clk --hierarchy tb.dut
+  waveform-cli list_signals wave --glob '*bank*'
+  waveform-cli list_signals wave --regex '^tb\.dut\..*_valid$'
+"#
+        }
+        "read_hierarchy" => {
+            r#"Usage: waveform-cli read_hierarchy <waveform_id> [--scope <scope>] [--recursive <bool>] [--limit <n>]
+
+Show the module hierarchy as an indented tree, starting at <scope> when given.
+Only module scopes are shown.
+
+Options:
+  -s, --scope <scope>     Start at this scope path, e.g. tb.dut (--hierarchy is an alias)
+  -r, --recursive <bool>  Include descendants (default: false)
+  -l, --limit <n>         Maximum number of modules, -1 for unlimited (default: 200)
+"#
+        }
+        "read_signal" => {
+            r#"Usage: waveform-cli read_signal <waveform_id> <signal_path> (--time-index <idx> | --time-indices <list>)
+
+Read signal values at one or more time indices (not timestamps).
+
+Arguments:
+  <signal_path>  Full signal path, e.g. tb.dut.abc_bank
+
+Options:
+  -t, --time-index <idx>     Single time index to read
+  -T, --time-indices <list>  Comma-separated time indices, e.g. 0,5,10
+"#
+        }
+        "get_signal_info" => {
+            r#"Usage: waveform-cli get_signal_info <waveform_id> <signal_path>
+
+Show the signal type, bit width and index range.
+
+Arguments:
+  <signal_path>  Full signal path, e.g. tb.dut.abc_bank
+"#
+        }
+        "find_signal_events" => {
+            r#"Usage: waveform-cli find_signal_events <waveform_id> <signal_path> [--start <idx>] [--end <idx>] [--limit <n>]
+
+List every value change of a signal within a time index range.
+
+Options:
+  -s, --start <idx>  First time index of the range (default: 0)
+  -e, --end <idx>    Last time index of the range (default: last index)
+  -l, --limit <n>    Maximum number of events, -1 for unlimited (default: 100)
+"#
+        }
+        "find_conditional_events" => {
+            r#"Usage: waveform-cli find_conditional_events <waveform_id> <condition> [--start <idx>] [--end <idx>] [--limit <n>]
+
+List the time indices where a condition holds.
+
+Condition syntax:
+  signal paths (TOP.signal), bitwise ~ & | ^, logical && || !, comparisons == !=,
+  parentheses, $past(signal), bit extraction signal[bit] / signal[msb:lsb],
+  and Verilog literals such as 4'b0101, 3'd2, 5'h1A.
+  Precedence (high to low): ~ !, == !=, &, ^, |, &&, ||
+
+Options:
+  -s, --start <idx>  First time index of the range (default: 0)
+  -e, --end <idx>    Last time index of the range (default: last index)
+  -l, --limit <n>    Maximum number of events, -1 for unlimited (default: 100)
+
+Examples:
+  waveform-cli find_conditional_events wave 'tb.dut.valid && tb.dut.ready'
+  waveform-cli find_conditional_events wave '!$past(tb.dut.valid) && tb.dut.valid'
+"#
+        }
+        _ => return None,
+    };
+
+    Some(text.to_string())
+}
+
+/// Detect a help request without running any command.
+///
+/// * `["help"]`, `["--help"]`, `["-h"]` -> `Some(None)` (general help)
+/// * `["help", "list_signals"]` -> `Some(Some("list_signals"))`
+/// * `["list_signals", "wave", "--help"]` -> `Some(Some("list_signals"))`
+pub fn help_request(args: &[String]) -> Option<Option<String>> {
+    let first = args.first()?;
+
+    if first == "help" {
+        return Some(match args.get(1) {
+            Some(name) if !name.starts_with('-') => Some(name.clone()),
+            _ => None,
+        });
+    }
+
+    if first == "--help" || first == "-h" {
+        return Some(None);
+    }
+
+    for group in split_command_groups(args) {
+        if group
+            .iter()
+            .skip(1)
+            .any(|arg| arg == "--help" || arg == "-h")
+        {
+            return Some(Some(group[0].clone()));
+        }
+    }
+
+    None
+}
+
 /// Parse a single command from a group of arguments
 fn parse_command(group: Vec<String>) -> Result<Command, String> {
     if group.is_empty() {
@@ -190,7 +389,7 @@ fn parse_list_signals(args: &[String]) -> Result<Command, String> {
                     .ok_or_else(|| format!("{} requires a value", flag))?;
                 add_pattern(&mut patterns, &mut selected_mode, value, MatchMode::Regex)?;
             }
-            "--hierarchy" | "-h" => {
+            "--hierarchy" => {
                 i += 1;
                 if i < args.len() {
                     hierarchy_prefix = Some(args[i].clone());
@@ -618,7 +817,7 @@ mod tests {
             "test.vcd".to_string(),
             "-p".to_string(),
             "data".to_string(),
-            "-h".to_string(),
+            "--hierarchy".to_string(),
             "top".to_string(),
             "-r".to_string(),
             "false".to_string(),
@@ -711,6 +910,108 @@ mod tests {
             result.unwrap_err(),
             "--regex cannot be combined with --glob; use only one match mode per list_signals"
         );
+    }
+
+    #[test]
+    fn test_help_request_general() {
+        for args in [
+            vec!["--help"],
+            vec!["-h"],
+            vec!["help"],
+            vec!["help", "--help"],
+        ] {
+            let args: Vec<String> = args.into_iter().map(String::from).collect();
+            assert_eq!(help_request(&args), Some(None), "args: {:?}", args);
+        }
+    }
+
+    #[test]
+    fn test_help_request_for_command() {
+        let args: Vec<String> = vec!["help", "list_signals"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert_eq!(help_request(&args), Some(Some("list_signals".to_string())));
+
+        let args: Vec<String> = vec!["list_signals", "wave", "--help"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert_eq!(help_request(&args), Some(Some("list_signals".to_string())));
+
+        // `-h` is help, not the hierarchy filter.
+        let args: Vec<String> = vec!["list_signals", "wave", "-h"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert_eq!(help_request(&args), Some(Some("list_signals".to_string())));
+
+        // The second command in a chain can ask for help too.
+        let args: Vec<String> = vec!["open_waveform", "wave.vcd", "--", "read_signal", "--help"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert_eq!(help_request(&args), Some(Some("read_signal".to_string())));
+    }
+
+    #[test]
+    fn test_help_request_none_for_normal_commands() {
+        let args: Vec<String> = vec!["open_waveform", "test.vcd"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert_eq!(help_request(&args), None);
+        assert_eq!(help_request(&[]), None);
+    }
+
+    #[test]
+    fn test_usage_text_mentions_commands_and_pattern_flags() {
+        let usage = usage_text();
+        for expected in [
+            "Usage:",
+            "open_waveform",
+            "find_conditional_events",
+            "help <command>",
+            "--contains",
+            "--glob",
+            "--regex",
+            "--version",
+        ] {
+            assert!(usage.contains(expected), "usage text is missing {expected}");
+        }
+    }
+
+    #[test]
+    fn test_command_help_covers_every_command() {
+        for name in [
+            "open_waveform",
+            "close_waveform",
+            "list_signals",
+            "read_hierarchy",
+            "read_signal",
+            "get_signal_info",
+            "find_signal_events",
+            "find_conditional_events",
+        ] {
+            let help = command_help(name).unwrap_or_else(|| panic!("no help for {name}"));
+            assert!(
+                help.starts_with("Usage:"),
+                "help for {name} lacks usage line"
+            );
+            assert!(
+                help.contains("waveform-cli"),
+                "help for {name} lacks command name"
+            );
+        }
+        assert!(command_help("nope").is_none());
+    }
+
+    #[test]
+    fn test_list_signals_help_documents_patterns() {
+        let help = command_help("list_signals").expect("help exists");
+        for expected in ["--contains", "--glob", "--regex", "--hierarchy", "--limit"] {
+            assert!(help.contains(expected), "help is missing {expected}");
+        }
     }
 
     #[test]

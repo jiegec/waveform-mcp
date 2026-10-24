@@ -10,7 +10,10 @@ pub mod matcher;
 pub mod signal;
 
 // Re-export public functions
-pub use cli_parser::{Command, SignalPattern, parse_args, split_command_groups};
+pub use cli_parser::{
+    Command, SignalPattern, command_help, help_request, parse_args, split_command_groups,
+    usage_text,
+};
 pub use condition::find_conditional_events;
 pub use formatting::{format_signal_value, format_time};
 pub use hierarchy::find_scope_by_path;

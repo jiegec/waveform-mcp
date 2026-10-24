@@ -207,6 +207,11 @@ In addition to the MCP server, a standalone CLI tool `waveform-cli` is available
 ### CLI Usage
 
 ```bash
+# Help
+waveform-cli --help              # general usage
+waveform-cli help list_signals   # detailed help for one command
+waveform-cli list_signals --help # same as above
+
 # Basic command
 waveform-cli open_waveform /path/to/waveform.vcd
 
@@ -237,6 +242,8 @@ waveform-cli open_waveform test.vcd --alias mywave -- \\
 - **get_signal_info** `<id>` `<signal>` - Get signal metadata
 - **find_signal_events** `<id>` `<signal>` [--start `<idx>`] [--end `<idx>`] [--limit `<n>`]
 - **find_conditional_events** `<id>` `<condition>` [--start `<idx>`] [--end `<idx>`] [--limit `<n>`]
+
+Every command also accepts `--help`/`-h`, and `waveform-cli --version` prints the version.
 
 
 ## Development
