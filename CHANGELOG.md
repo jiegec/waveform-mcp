@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `waveform-cli --help`/`-h`, `waveform-cli help <command>` and `waveform-cli <command> --help`
   print general or per-command help; `--version`/`-V` prints the version
 
+### Fixed
+- CLI numeric and boolean options (`--limit`, `--start`, `--end`, `--time-index`,
+  `--time-indices`, `--recursive`) now reject invalid values instead of silently falling back to
+  a default (an invalid `--limit` used to mean "unlimited")
+
 ### Changed
 - CLI `-h` now means help; the `list_signals` scope filter is `--hierarchy` only
 - The `list_signals` MCP parameter `name_pattern` was renamed to `pattern` (`name_pattern`

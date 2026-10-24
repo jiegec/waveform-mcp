@@ -285,6 +285,39 @@ pub fn help_request(args: &[String]) -> Option<Option<String>> {
     None
 }
 
+/// Parse a numeric option value, naming the flag when it fails.
+fn parse_number<T>(flag: &str, value: &str) -> Result<T, String>
+where
+    T: std::str::FromStr,
+{
+    value
+        .trim()
+        .parse()
+        .map_err(|_| format!("{} expects a number, got '{}'", flag, value))
+}
+
+/// Parse a boolean option value (`true`/`false`, also accepting yes/no and 1/0).
+fn parse_bool(flag: &str, value: &str) -> Result<bool, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "true" | "yes" | "1" => Ok(true),
+        "false" | "no" | "0" => Ok(false),
+        _ => Err(format!("{} expects true or false, got '{}'", flag, value)),
+    }
+}
+
+/// Parse a comma-separated list of numbers, e.g. `0,5,10`.
+fn parse_number_list<T>(flag: &str, value: &str) -> Result<Vec<T>, String>
+where
+    T: std::str::FromStr,
+{
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(|part| parse_number(flag, part))
+        .collect()
+}
+
 /// Parse a single command from a group of arguments
 fn parse_command(group: Vec<String>) -> Result<Command, String> {
     if group.is_empty() {
@@ -400,7 +433,7 @@ fn parse_list_signals(args: &[String]) -> Result<Command, String> {
             "--recursive" | "-r" => {
                 i += 1;
                 if i < args.len() {
-                    recursive = args[i].parse().unwrap_or(true);
+                    recursive = parse_bool("--recursive", &args[i])?;
                 } else {
                     return Err("--recursive requires a value (true/false)".to_string());
                 }
@@ -408,7 +441,7 @@ fn parse_list_signals(args: &[String]) -> Result<Command, String> {
             "--limit" | "-l" => {
                 i += 1;
                 if i < args.len() {
-                    limit = args[i].parse().ok();
+                    limit = Some(parse_number("--limit", &args[i])?);
                 } else {
                     return Err("--limit requires a value".to_string());
                 }
@@ -488,7 +521,7 @@ fn parse_read_hierarchy(args: &[String]) -> Result<Command, String> {
             "--recursive" | "-r" => {
                 i += 1;
                 if i < args.len() {
-                    recursive = args[i].parse().unwrap_or(false);
+                    recursive = parse_bool("--recursive", &args[i])?;
                 } else {
                     return Err("--recursive requires a value (true/false)".to_string());
                 }
@@ -496,7 +529,7 @@ fn parse_read_hierarchy(args: &[String]) -> Result<Command, String> {
             "--limit" | "-l" => {
                 i += 1;
                 if i < args.len() {
-                    limit = args[i].parse().ok();
+                    limit = Some(parse_number("--limit", &args[i])?);
                 } else {
                     return Err("--limit requires a value".to_string());
                 }
@@ -530,7 +563,7 @@ fn parse_read_signal(args: &[String]) -> Result<Command, String> {
             "--time-index" | "-t" => {
                 i += 1;
                 if i < args.len() {
-                    time_index = args[i].parse().ok();
+                    time_index = Some(parse_number("--time-index", &args[i])?);
                 } else {
                     return Err("--time-index requires a value".to_string());
                 }
@@ -538,8 +571,7 @@ fn parse_read_signal(args: &[String]) -> Result<Command, String> {
             "--time-indices" | "-T" => {
                 i += 1;
                 if i < args.len() {
-                    time_indices =
-                        Some(args[i].split(',').filter_map(|s| s.parse().ok()).collect());
+                    time_indices = Some(parse_number_list("--time-indices", &args[i])?);
                 } else {
                     return Err("--time-indices requires a value".to_string());
                 }
@@ -585,7 +617,7 @@ fn parse_find_signal_events(args: &[String]) -> Result<Command, String> {
             "--start" | "-s" => {
                 i += 1;
                 if i < args.len() {
-                    start_time_index = args[i].parse().ok();
+                    start_time_index = Some(parse_number("--start", &args[i])?);
                 } else {
                     return Err("--start requires a value".to_string());
                 }
@@ -593,7 +625,7 @@ fn parse_find_signal_events(args: &[String]) -> Result<Command, String> {
             "--end" | "-e" => {
                 i += 1;
                 if i < args.len() {
-                    end_time_index = args[i].parse().ok();
+                    end_time_index = Some(parse_number("--end", &args[i])?);
                 } else {
                     return Err("--end requires a value".to_string());
                 }
@@ -601,7 +633,7 @@ fn parse_find_signal_events(args: &[String]) -> Result<Command, String> {
             "--limit" | "-l" => {
                 i += 1;
                 if i < args.len() {
-                    limit = args[i].parse().ok();
+                    limit = Some(parse_number("--limit", &args[i])?);
                 } else {
                     return Err("--limit requires a value".to_string());
                 }
@@ -642,7 +674,7 @@ fn parse_find_conditional_events(args: &[String]) -> Result<Command, String> {
             "--start" | "-s" => {
                 i += 1;
                 if i < args.len() {
-                    start_time_index = args[i].parse().ok();
+                    start_time_index = Some(parse_number("--start", &args[i])?);
                 } else {
                     return Err("--start requires a value".to_string());
                 }
@@ -650,7 +682,7 @@ fn parse_find_conditional_events(args: &[String]) -> Result<Command, String> {
             "--end" | "-e" => {
                 i += 1;
                 if i < args.len() {
-                    end_time_index = args[i].parse().ok();
+                    end_time_index = Some(parse_number("--end", &args[i])?);
                 } else {
                     return Err("--end requires a value".to_string());
                 }
@@ -658,7 +690,7 @@ fn parse_find_conditional_events(args: &[String]) -> Result<Command, String> {
             "--limit" | "-l" => {
                 i += 1;
                 if i < args.len() {
-                    limit = args[i].parse().ok();
+                    limit = Some(parse_number("--limit", &args[i])?);
                 } else {
                     return Err("--limit requires a value".to_string());
                 }
@@ -1187,6 +1219,69 @@ mod tests {
                 limit: Some(100),
             }
         );
+    }
+
+    #[test]
+    fn test_parse_rejects_invalid_numeric_and_boolean_values() {
+        for (args, expected) in [
+            (
+                vec!["list_signals", "wave", "--limit", "abc"],
+                "--limit expects a number, got 'abc'",
+            ),
+            (
+                vec!["list_signals", "wave", "--recursive", "maybe"],
+                "--recursive expects true or false, got 'maybe'",
+            ),
+            (
+                vec!["read_hierarchy", "wave", "--limit", "-"],
+                "--limit expects a number, got '-'",
+            ),
+            (
+                vec!["read_signal", "wave", "tb.clk", "--time-index", "x"],
+                "--time-index expects a number, got 'x'",
+            ),
+            (
+                vec!["read_signal", "wave", "tb.clk", "--time-indices", "0,x,2"],
+                "--time-indices expects a number, got 'x'",
+            ),
+            (
+                vec!["find_signal_events", "wave", "tb.clk", "--start", "1.5"],
+                "--start expects a number, got '1.5'",
+            ),
+            (
+                vec!["find_conditional_events", "wave", "tb.clk", "--end", "late"],
+                "--end expects a number, got 'late'",
+            ),
+        ] {
+            let args: Vec<String> = args.into_iter().map(String::from).collect();
+            assert_eq!(parse_args(args).unwrap_err(), expected);
+        }
+    }
+
+    #[test]
+    fn test_parse_accepts_boolean_aliases() {
+        let args: Vec<String> = vec!["list_signals", "wave", "-r", "no"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        match &parse_args(args).unwrap()[0] {
+            Command::ListSignals { recursive, .. } => assert!(!recursive),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_time_indices_ignores_blank_entries() {
+        let args: Vec<String> = vec!["read_signal", "wave", "tb.clk", "-T", "0, ,2"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        match &parse_args(args).unwrap()[0] {
+            Command::ReadSignal { time_indices, .. } => {
+                assert_eq!(time_indices, &Some(vec![0, 2]));
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
     }
 
     #[test]
