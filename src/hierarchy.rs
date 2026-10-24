@@ -3,6 +3,7 @@
 use wellen;
 
 use super::matcher::SignalMatcher;
+use super::suggest::not_found_message;
 
 struct HierarchyRenderer {
     lines: Vec<String>,
@@ -108,7 +109,7 @@ pub fn read_hierarchy(
     match scope_path {
         Some(path) => {
             let scope_ref = find_scope_by_path(hierarchy, path)
-                .ok_or_else(|| format!("Scope not found: {}", path))?;
+                .ok_or_else(|| scope_not_found_message(hierarchy, path))?;
             let child_depth = if recursive { usize::MAX } else { 1 };
             render_scope(hierarchy, scope_ref, 0, child_depth, true, &mut renderer);
         }
@@ -126,6 +127,32 @@ pub fn read_hierarchy(
     }
 
     Ok(renderer.finish())
+}
+
+/// All signal paths in the hierarchy.
+pub fn all_signal_paths(hierarchy: &wellen::Hierarchy) -> Vec<String> {
+    hierarchy
+        .all_vars()
+        .map(|var_ref| hierarchy[var_ref].full_name(hierarchy))
+        .collect()
+}
+
+/// All scope paths in the hierarchy.
+pub fn all_scope_paths(hierarchy: &wellen::Hierarchy) -> Vec<String> {
+    hierarchy
+        .all_scopes()
+        .map(|scope_ref| hierarchy[scope_ref].full_name(hierarchy))
+        .collect()
+}
+
+/// "Signal not found" message, with suggestions from the hierarchy.
+pub fn signal_not_found_message(hierarchy: &wellen::Hierarchy, signal_path: &str) -> String {
+    not_found_message("signal", signal_path, &all_signal_paths(hierarchy))
+}
+
+/// "Scope not found" message, with suggestions from the hierarchy.
+pub fn scope_not_found_message(hierarchy: &wellen::Hierarchy, scope_path: &str) -> String {
+    not_found_message("scope", scope_path, &all_scope_paths(hierarchy))
 }
 
 /// Collect signals from a scope and optionally its children recursively.

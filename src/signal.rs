@@ -3,8 +3,10 @@
 use wellen;
 
 use super::{
-    formatting::format_signal_value, formatting::format_time,
-    hierarchy::collect_signals_from_scope, hierarchy::find_scope_by_path, matcher::SignalMatcher,
+    formatting::format_signal_value, formatting::format_time, hierarchy::all_signal_paths,
+    hierarchy::collect_signals_from_scope, hierarchy::find_scope_by_path,
+    hierarchy::signal_not_found_message, matcher::MatchMode, matcher::SignalMatcher,
+    matcher::glob_hint, matcher::pattern_seed, suggest::did_you_mean,
 };
 
 /// List signals in a waveform hierarchy with optional filtering.
@@ -53,6 +55,78 @@ pub fn list_signals(
     }
 
     signals
+}
+
+/// Build the user-facing text for a `list_signals` query.
+///
+/// When nothing matches, the patterns are turned into fuzzy-search seeds and the closest signal
+/// paths are suggested. That catches abbreviations (`abc_bank` vs `tb.dut.abc_bank`), typos, and
+/// patterns that were written with glob wildcards but are used in substring mode.
+///
+/// # Arguments
+/// * `hierarchy` - The waveform hierarchy
+/// * `patterns` - The `(pattern, match mode)` pairs the user asked for
+/// * `signals` - The signals that actually matched
+pub fn format_signal_query_result(
+    hierarchy: &wellen::Hierarchy,
+    patterns: &[(String, MatchMode)],
+    signals: &[String],
+) -> String {
+    if !signals.is_empty() {
+        return format!("Found {} signals:\n{}", signals.len(), signals.join("\n"));
+    }
+
+    let mut output = String::from("No signals matched.");
+
+    let suggestions = fuzzy_signal_suggestions(hierarchy, patterns);
+    if !suggestions.is_empty() {
+        let quoted: Vec<String> = suggestions
+            .iter()
+            .map(|suggestion| format!("'{}'", suggestion))
+            .collect();
+        output.push_str(&format!("\nDid you mean: {}?", quoted.join(", ")));
+    }
+
+    if let Some(hint) = glob_hint(patterns) {
+        output.push_str("\n\n");
+        output.push_str(&hint);
+    }
+
+    output
+}
+
+/// Fuzzy-match the query patterns against all signal paths, best matches first.
+fn fuzzy_signal_suggestions(
+    hierarchy: &wellen::Hierarchy,
+    patterns: &[(String, MatchMode)],
+) -> Vec<String> {
+    let mut seeds: Vec<String> = Vec::new();
+    for (pattern, mode) in patterns {
+        let seed = pattern_seed(pattern, *mode);
+        if !seed.is_empty() && !seeds.contains(&seed) {
+            seeds.push(seed);
+        }
+    }
+
+    if seeds.is_empty() {
+        return Vec::new();
+    }
+
+    let paths = all_signal_paths(hierarchy);
+    let mut suggestions: Vec<String> = Vec::new();
+
+    for seed in seeds {
+        for suggestion in did_you_mean(&seed, &paths) {
+            if !suggestions.contains(&suggestion) {
+                suggestions.push(suggestion);
+            }
+            if suggestions.len() >= 5 {
+                return suggestions;
+            }
+        }
+    }
+
+    suggestions
 }
 
 /// Read signal values at specific time indices.
@@ -130,11 +204,11 @@ pub fn get_signal_metadata(
         let name = parts[parts.len() - 1];
         hierarchy
             .lookup_var(path, name)
-            .ok_or_else(|| format!("Signal not found: {}", signal_path))?
+            .ok_or_else(|| signal_not_found_message(hierarchy, signal_path))?
     } else {
         hierarchy
             .lookup_var(&[], signal_path)
-            .ok_or_else(|| format!("Signal not found: {}", signal_path))?
+            .ok_or_else(|| signal_not_found_message(hierarchy, signal_path))?
     };
 
     let var = &hierarchy[var_ref];

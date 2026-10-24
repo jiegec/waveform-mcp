@@ -14,9 +14,10 @@ use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::prelude::*;
 use waveform_mcp::{
-    MatchMode, SignalMatcher, find_conditional_events, find_signal_by_path, find_signal_events,
-    get_signal_metadata, glob_hint, list_signals, not_found_message, read_hierarchy,
-    read_signal_values,
+    MatchMode, SignalMatcher, find_conditional_events, find_scope_by_path, find_signal_by_path,
+    find_signal_events, format_signal_query_result, get_signal_metadata, list_signals,
+    not_found_message, read_hierarchy, read_signal_values, scope_not_found_message,
+    signal_not_found_message,
 };
 
 /// Command line arguments for the waveform MCP server
@@ -283,6 +284,15 @@ impl WaveformHandler {
         let matcher =
             SignalMatcher::new(&patterns).map_err(|e| McpError::invalid_params(e, None))?;
 
+        if let Some(prefix) = args.hierarchy_prefix.as_deref()
+            && find_scope_by_path(hierarchy, prefix).is_none()
+        {
+            return Err(McpError::invalid_params(
+                scope_not_found_message(hierarchy, prefix),
+                None,
+            ));
+        }
+
         let signals = list_signals(
             hierarchy,
             &matcher,
@@ -291,12 +301,7 @@ impl WaveformHandler {
             args.limit,
         );
 
-        let mut body = format!("Found {} signals:\n{}", signals.len(), signals.join("\n"));
-        if signals.is_empty()
-            && let Some(hint) = glob_hint(&patterns)
-        {
-            body.push_str(&format!("\n\n{}", hint));
-        }
+        let body = format_signal_query_result(hierarchy, &patterns, &signals);
 
         Ok(CallToolResult::success(vec![ContentBlock::text(body)]))
     }
@@ -359,7 +364,7 @@ impl WaveformHandler {
 
         let hierarchy = waveform.hierarchy();
         let signal_ref = find_signal_by_path(hierarchy, &args.signal_path).ok_or_else(|| {
-            McpError::invalid_params(format!("Signal not found: {}", args.signal_path), None)
+            McpError::invalid_params(signal_not_found_message(hierarchy, &args.signal_path), None)
         })?;
 
         // Load the signal data
@@ -425,7 +430,7 @@ impl WaveformHandler {
 
         let hierarchy = waveform.hierarchy();
         let signal_ref = find_signal_by_path(hierarchy, &args.signal_path).ok_or_else(|| {
-            McpError::invalid_params(format!("Signal not found: {}", args.signal_path), None)
+            McpError::invalid_params(signal_not_found_message(hierarchy, &args.signal_path), None)
         })?;
 
         // Load the signal data

@@ -479,8 +479,10 @@ $enddefinitions $end\n\
     let waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
     let hierarchy = waveform.hierarchy();
 
-    let result = read_hierarchy(hierarchy, Some("top.missing"), true, None);
-    assert_eq!(result.unwrap_err(), "Scope not found: top.missing");
+    let result = read_hierarchy(hierarchy, Some("top.missing"), true, None)
+        .expect_err("missing scope should be reported");
+    assert!(result.contains("not found"), "unexpected error: {result}");
+    assert!(result.contains("top.missing"), "unexpected error: {result}");
 }
 
 #[test]
@@ -571,4 +573,95 @@ $enddefinitions $end\n\
         signals,
         vec!["tb.dut.abc_bank".to_string(), "tb.dut.clk".to_string()]
     );
+}
+
+#[test]
+fn test_not_found_messages_suggest_signals_and_scopes() {
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module tb $end\n\
+$scope module dut $end\n\
+$var wire 1 ! abc_bank $end\n\
+$var wire 1 \" abc_ram $end\n\
+$upscope $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+0!\n\
+0\"";
+
+    let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    write!(temp_file, "{}", vcd_content).expect("Failed to write VCD content");
+    temp_file.flush().expect("Failed to flush");
+
+    let waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+    let hierarchy = waveform.hierarchy();
+
+    // Typos in a signal path suggest the closest signal.
+    let message = waveform_mcp::signal_not_found_message(hierarchy, "tb.dut.abc_bnk");
+    assert!(
+        message.contains("Did you mean") && message.contains("tb.dut.abc_bank"),
+        "unexpected message: {message}"
+    );
+
+    // A short name that only exists as a path suffix is still suggested.
+    let message = waveform_mcp::signal_not_found_message(hierarchy, "abc_bank");
+    assert!(message.contains("tb.dut.abc_bank"), "message: {message}");
+
+    // Typos in a scope path suggest the closest scope.
+    let message = waveform_mcp::scope_not_found_message(hierarchy, "tb.dtu");
+    assert!(
+        message.contains("Did you mean") && message.contains("tb.dut"),
+        "unexpected message: {message}"
+    );
+
+    // Nothing similar lists what is available instead.
+    let message = waveform_mcp::signal_not_found_message(hierarchy, "zzzzzzzz");
+    assert!(message.contains("Available signals"), "message: {message}");
+}
+
+#[test]
+fn test_empty_signal_query_suggests_paths_and_globs() {
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module tb $end\n\
+$var wire 1 ! abc_bank $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+0!";
+
+    let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    write!(temp_file, "{}", vcd_content).expect("Failed to write VCD content");
+    temp_file.flush().expect("Failed to flush");
+
+    let waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+    let hierarchy = waveform.hierarchy();
+
+    // A glob that matches nothing still suggests the closest signal path.
+    let patterns = vec![("*bank*".to_string(), MatchMode::Glob)];
+    let result = waveform_mcp::format_signal_query_result(hierarchy, &patterns, &[]);
+    assert!(
+        result.starts_with("No signals matched."),
+        "result: {result}"
+    );
+    assert!(result.contains("tb.abc_bank"), "result: {result}");
+
+    // A literal glob in substring mode gets the wildcard hint.
+    let patterns = vec![("*bank*".to_string(), MatchMode::Substring)];
+    let result = waveform_mcp::format_signal_query_result(hierarchy, &patterns, &[]);
+    assert!(result.contains("hint:"), "result: {result}");
+
+    // Successful queries keep the plain listing format.
+    let patterns = vec![("bank".to_string(), MatchMode::Substring)];
+    let result = waveform_mcp::format_signal_query_result(
+        hierarchy,
+        &patterns,
+        &["tb.abc_bank".to_string()],
+    );
+    assert_eq!(result, "Found 1 signals:\ntb.abc_bank");
 }

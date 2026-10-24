@@ -1,13 +1,13 @@
 //! "Did you mean ..." suggestions for unknown waveform ids, signals and scopes.
 //!
 //! When a lookup fails, echoing back the available names (or the closest ones) is far more
-//! useful than a bare "not found". Suggestions combine edit distance with substring matching,
-//! so both typos (`tb.dut.ab_bank`) and abbreviated paths (`abc_bank` vs `tb.dut.abc_bank`)
-//! are suggested.
+//! useful than a bare "not found". Suggestions combine edit distance (which also handles
+//! transposed characters, e.g. `tb.dtu` vs `tb.dut`) with path containment, so both typos and
+//! abbreviated paths (`abc_bank` vs `tb.dut.abc_bank`) are suggested.
 
 use std::cmp::Ordering;
 
-use strsim::normalized_levenshtein;
+use strsim::normalized_damerau_levenshtein;
 
 /// Maximum number of suggestions shown.
 const MAX_SUGGESTIONS: usize = 5;
@@ -24,8 +24,7 @@ pub fn did_you_mean(query: &str, candidates: &[String]) -> Vec<String> {
 
     let mut scored: Vec<(f64, &String)> = candidates
         .iter()
-        .map(|candidate| (similarity(&query_lower, candidate), candidate))
-        .filter(|(score, _)| *score >= MIN_SCORE)
+        .filter_map(|candidate| similarity(&query_lower, candidate).map(|score| (score, candidate)))
         .collect();
 
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
@@ -44,23 +43,70 @@ pub fn did_you_mean(query: &str, candidates: &[String]) -> Vec<String> {
 }
 
 /// Similarity between an already lowercased query and a candidate name.
-fn similarity(query_lower: &str, candidate: &str) -> f64 {
+///
+/// Returns `None` for candidates that are too different to be worth a full edit-distance
+/// calculation, which keeps suggestions cheap even for hierarchies with many signals.
+fn similarity(query_lower: &str, candidate: &str) -> Option<f64> {
     let candidate_lower = candidate.to_lowercase();
 
     if candidate_lower == *query_lower {
-        return 1.0;
+        return Some(1.0);
     }
+
+    let query_len = query_lower.chars().count();
+    let candidate_len = candidate_lower.chars().count();
 
     // Hierarchical paths are long, so containment is a stronger signal than edit distance:
     // `abc_bank` should suggest `tb.dut.abc_bank`.
-    let containment: f64 =
-        if candidate_lower.contains(query_lower) || query_lower.contains(&candidate_lower) {
-            0.95
-        } else {
-            0.0
-        };
+    if candidate_lower.contains(query_lower) {
+        return Some(coverage_score(query_len, candidate_len));
+    }
 
-    containment.max(normalized_levenshtein(query_lower, &candidate_lower))
+    // The leaf name is what people usually type, so match it as well as the full path.
+    let leaf = candidate_lower
+        .rsplit('.')
+        .next()
+        .unwrap_or(&candidate_lower);
+    let leaf_len = leaf.chars().count();
+
+    if leaf != candidate_lower && leaf.contains(query_lower) {
+        return Some(coverage_score(query_len, leaf_len));
+    }
+
+    // Characters in order but not adjacent, e.g. `bnk` for `abc_bank`.
+    if is_subsequence(query_lower, leaf) {
+        return Some(0.55 + 0.35 * (query_len as f64 / leaf_len as f64));
+    }
+
+    // Plain edit distance handles the remaining typos. Skip obviously unrelated candidates,
+    // both by full path and by leaf name, before running the quadratic algorithm.
+    let length_slack = (query_len / 2).max(4);
+    if query_len.abs_diff(candidate_len) > length_slack
+        && query_len.abs_diff(leaf_len) > length_slack
+    {
+        return None;
+    }
+
+    let score = normalized_damerau_levenshtein(query_lower, &candidate_lower)
+        .max(normalized_damerau_levenshtein(query_lower, leaf));
+    (score >= MIN_SCORE).then_some(score)
+}
+
+/// Score for a candidate that contains the query, scaled by how much of it the query covers.
+fn coverage_score(query_len: usize, candidate_len: usize) -> f64 {
+    let shorter = query_len.min(candidate_len) as f64;
+    let longer = query_len.max(candidate_len).max(1) as f64;
+    0.6 + 0.35 * (shorter / longer)
+}
+
+/// Whether the characters of `needle` appear in `haystack` in order.
+fn is_subsequence(needle: &str, haystack: &str) -> bool {
+    let mut haystack = haystack.chars();
+    needle.chars().all(|needle_char| {
+        haystack
+            .by_ref()
+            .any(|haystack_char| haystack_char == needle_char)
+    })
 }
 
 /// Build a "not found" message with suggestions or the available names.
@@ -155,6 +201,32 @@ mod tests {
         let suggestions = did_you_mean("tb.c.bank", &candidates);
         assert_eq!(suggestions.first().unwrap(), "tb.c.bank");
         assert!(suggestions.len() <= MAX_SUGGESTIONS);
+    }
+
+    #[test]
+    fn suggests_leaf_name_typos_and_subsequences() {
+        let candidates = names(&["tb.dut.abc_bank", "tb.dut.abc_ram"]);
+
+        // Transposed characters in the leaf name.
+        assert_eq!(
+            did_you_mean("tb.dut.abc_bnak", &candidates),
+            vec!["tb.dut.abc_bank".to_string()]
+        );
+
+        // A query with missing characters still finds the leaf name.
+        assert_eq!(
+            did_you_mean("bnk", &candidates),
+            vec!["tb.dut.abc_bank".to_string()]
+        );
+    }
+
+    #[test]
+    fn transposed_scope_beats_short_prefix() {
+        let candidates = names(&["tb", "tb.dut"]);
+        assert_eq!(
+            did_you_mean("tb.dtu", &candidates),
+            vec!["tb.dut".to_string()]
+        );
     }
 
     #[test]

@@ -94,7 +94,8 @@ The server provides 8 MCP tools:
    - `recursive`: Optional flag to include signals from sub-hierarchies (default: false)
    - `limit`: Optional maximum number of signals to return (default: 100)
 
-   Invalid glob or regex patterns are reported as errors rather than silently matching nothing.
+   Invalid glob or regex patterns are reported as errors rather than silently matching nothing,
+   and when nothing matches the response suggests the closest signal paths.
 
    **Example response:**
    ```

@@ -15,9 +15,10 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use waveform_mcp::{
-    Command, SignalMatcher, command_help, find_conditional_events, find_signal_by_path,
-    find_signal_events, get_signal_metadata, glob_hint, help_request, list_signals,
-    not_found_message, parse_args, read_hierarchy, read_signal_values, usage_text,
+    Command, SignalMatcher, command_help, find_conditional_events, find_scope_by_path,
+    find_signal_by_path, find_signal_events, format_signal_query_result, get_signal_metadata,
+    help_request, list_signals, not_found_message, parse_args, read_hierarchy, read_signal_values,
+    scope_not_found_message, signal_not_found_message, usage_text,
 };
 
 /// Print the help text for `command`, or the general usage text when `None`.
@@ -125,6 +126,12 @@ fn execute_command(store: &mut WaveformStore, cmd: &Command) -> Result<String, S
             let matcher = SignalMatcher::new(&specs)
                 .map_err(|e| format!("Error compiling path pattern: {}", e))?;
 
+            if let Some(prefix) = hierarchy_prefix.as_deref()
+                && find_scope_by_path(hierarchy, prefix).is_none()
+            {
+                return Err(scope_not_found_message(hierarchy, prefix));
+            }
+
             let signals = list_signals(
                 hierarchy,
                 &matcher,
@@ -133,14 +140,7 @@ fn execute_command(store: &mut WaveformStore, cmd: &Command) -> Result<String, S
                 *limit,
             );
 
-            let mut output = format!("Found {} signals:\n{}", signals.len(), signals.join("\n"));
-            if signals.is_empty()
-                && let Some(hint) = glob_hint(&specs)
-            {
-                output.push_str(&format!("\n\n{}", hint));
-            }
-
-            Ok(output)
+            Ok(format_signal_query_result(hierarchy, &specs, &signals))
         }
         Command::ReadHierarchy {
             waveform_id,
@@ -176,7 +176,7 @@ fn execute_command(store: &mut WaveformStore, cmd: &Command) -> Result<String, S
 
             let hierarchy = waveform.hierarchy();
             let signal_ref = find_signal_by_path(hierarchy, signal_path)
-                .ok_or_else(|| format!("Signal not found: {}", signal_path))?;
+                .ok_or_else(|| signal_not_found_message(hierarchy, signal_path))?;
 
             waveform.load_signals(&[signal_ref]);
 
@@ -216,7 +216,7 @@ fn execute_command(store: &mut WaveformStore, cmd: &Command) -> Result<String, S
 
             let hierarchy = waveform.hierarchy();
             let signal_ref = find_signal_by_path(hierarchy, signal_path)
-                .ok_or_else(|| format!("Signal not found: {}", signal_path))?;
+                .ok_or_else(|| signal_not_found_message(hierarchy, signal_path))?;
 
             waveform.load_signals(&[signal_ref]);
 

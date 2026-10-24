@@ -173,6 +173,27 @@ impl SignalMatcher {
     }
 }
 
+/// Turn a pattern into a literal seed usable for fuzzy suggestions.
+///
+/// Glob and regex metacharacters are stripped, so `*bank*` or `^tb\..*_bank$` become
+/// `bank` / `tb._bank`, which can be fuzzy-matched against real signal paths.
+pub fn pattern_seed(pattern: &str, mode: MatchMode) -> String {
+    let metacharacters: &[char] = match mode {
+        MatchMode::Substring => &[],
+        MatchMode::Glob => &['*', '?', '[', ']', '{', '}', ',', '!'],
+        MatchMode::Regex => &[
+            '^', '$', '*', '+', '?', '(', ')', '[', ']', '{', '}', '|', '\\',
+        ],
+    };
+
+    pattern
+        .chars()
+        .filter(|c| !metacharacters.contains(c))
+        .collect::<String>()
+        .trim_matches(|c: char| c == '.' || c.is_whitespace())
+        .to_string()
+}
+
 /// Detect substring patterns that look like globs, e.g. `*bank*`.
 ///
 /// Returns a hint string when the caller probably wanted glob matching.
@@ -294,6 +315,18 @@ mod tests {
     fn invalid_glob_is_reported() {
         let err = SignalMatcher::single("a[", MatchMode::Glob).unwrap_err();
         assert!(err.contains("Invalid glob"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn pattern_seed_strips_metacharacters() {
+        assert_eq!(pattern_seed("bank", MatchMode::Substring), "bank");
+        assert_eq!(pattern_seed("*bank*", MatchMode::Glob), "bank");
+        assert_eq!(pattern_seed("tb.*.clk", MatchMode::Glob), "tb..clk");
+        assert_eq!(
+            pattern_seed("^tb\\..*_bank$", MatchMode::Regex),
+            "tb.._bank"
+        );
+        assert_eq!(pattern_seed(".*", MatchMode::Regex), "");
     }
 
     #[test]
