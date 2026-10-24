@@ -581,6 +581,10 @@ fn parse_read_signal(args: &[String]) -> Result<Command, String> {
         i += 1;
     }
 
+    if time_index.is_some() && time_indices.is_some() {
+        return Err("provide either --time-index or --time-indices, not both".to_string());
+    }
+
     Ok(Command::ReadSignal {
         waveform_id,
         signal_path,
@@ -1268,6 +1272,26 @@ mod tests {
             Command::ListSignals { recursive, .. } => assert!(!recursive),
             other => panic!("unexpected command: {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_parse_read_signal_rejects_two_index_forms() {
+        let args: Vec<String> = vec![
+            "read_signal",
+            "wave",
+            "tb.clk",
+            "--time-index",
+            "0",
+            "--time-indices",
+            "1,2",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+        assert_eq!(
+            parse_args(args).unwrap_err(),
+            "provide either --time-index or --time-indices, not both"
+        );
     }
 
     #[test]

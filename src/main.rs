@@ -347,7 +347,7 @@ impl WaveformHandler {
     }
 
     #[tool(
-        description = "Read signal values from a waveform. Use waveform_id from open_waveform and signal_path from list_signals. Provide either time_index (single) or time_indices (array). For sophisticated usage like finding rising/falling edges, detecting signal transitions, or finding handshake cycles (valid && ready), use find_conditional_events instead."
+        description = "Read signal values from a waveform. Use waveform_id from open_waveform and signal_path from list_signals. Provide exactly one of time_index (single) or time_indices (array). For sophisticated usage like finding rising/falling edges, detecting signal transitions, or finding handshake cycles (valid && ready), use find_conditional_events instead."
     )]
     async fn read_signal(
         &self,
@@ -372,14 +372,21 @@ impl WaveformHandler {
         waveform.load_signals(&[signal_ref]);
 
         // Determine which time indices to read
-        let indices_to_read: Vec<usize> = if let Some(ref indices) = args.time_indices {
-            indices.clone()
-        } else if let Some(index) = args.time_index {
-            vec![index]
-        } else {
-            return Ok(CallToolResult::error(vec![ContentBlock::text(
-                "Either time_index or time_indices must be provided".to_string(),
-            )]));
+        let indices_to_read: Vec<usize> = match (args.time_index, &args.time_indices) {
+            (Some(_), Some(_)) => {
+                return Err(McpError::invalid_params(
+                    "provide either time_index or time_indices, not both",
+                    None,
+                ));
+            }
+            (Some(index), None) => vec![index],
+            (None, Some(indices)) => indices.clone(),
+            (None, None) => {
+                return Err(McpError::invalid_params(
+                    "Either time_index or time_indices must be provided",
+                    None,
+                ));
+            }
         };
 
         let results = read_signal_values(waveform, signal_ref, &indices_to_read)
