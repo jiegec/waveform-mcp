@@ -69,6 +69,7 @@ The server provides 8 MCP tools:
    - `alias`: Optional alias for the waveform (defaults to filename)
 
    When the file does not exist, files with a similar name in the same directory are suggested.
+   Failures are reported as tool errors, like every other tool.
 
    **Example response:**
    ```

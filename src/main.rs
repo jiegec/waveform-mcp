@@ -222,20 +222,15 @@ impl WaveformHandler {
         let path = PathBuf::from(&args.file_path);
 
         if !path.exists() {
-            return Ok(CallToolResult::error(vec![ContentBlock::text(
+            return Err(McpError::invalid_params(
                 file_not_found_message(&path),
-            )]));
+                None,
+            ));
         }
 
-        let waveform = match wellen::simple::read(&path) {
-            Ok(w) => w,
-            Err(e) => {
-                return Ok(CallToolResult::error(vec![ContentBlock::text(format!(
-                    "Failed to read waveform: {}",
-                    e
-                ))]));
-            }
-        };
+        let waveform = wellen::simple::read(&path).map_err(|e| {
+            McpError::invalid_params(format!("Failed to read waveform: {}", e), None)
+        })?;
 
         let alias = args.alias.clone().unwrap_or_else(|| {
             path.file_name()
@@ -511,15 +506,14 @@ impl WaveformHandler {
         let args = &args.0;
         let mut waveforms = self.waveforms.write().await;
 
-        match waveforms.remove(&args.waveform_id) {
-            Some(_) => Ok(CallToolResult::success(vec![ContentBlock::text(format!(
-                "Waveform '{}' closed successfully",
-                args.waveform_id
-            ))])),
-            None => Ok(CallToolResult::error(vec![ContentBlock::text(
-                waveform_not_found_message(&waveforms, &args.waveform_id),
-            )])),
-        }
+        waveforms
+            .remove(&args.waveform_id)
+            .ok_or_else(|| waveform_not_found(&waveforms, &args.waveform_id))?;
+
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
+            "Waveform '{}' closed successfully",
+            args.waveform_id
+        ))]))
     }
 }
 
