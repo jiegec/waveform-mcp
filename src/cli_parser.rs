@@ -59,6 +59,7 @@ pub enum Command {
     OpenWaveform {
         file_path: String,
         alias: Option<String>,
+        overwrite: bool,
     },
     CloseWaveform {
         waveform_id: String,
@@ -147,7 +148,7 @@ pub fn usage_text() -> String {
         "commands that follow in the chain.",
         "",
         "Commands:",
-        "  open_waveform            Open a VCD/FST waveform file",
+        "  open_waveform            Open a VCD/FST waveform file (--overwrite to reopen)",
         "  close_waveform           Close a waveform and free its memory",
         "  list_signals             List signals, optionally filtered by path patterns",
         "  read_hierarchy           Show the module hierarchy as an indented tree",
@@ -391,6 +392,7 @@ fn parse_open_waveform(args: &[String]) -> Result<Command, String> {
 
     let file_path = args[0].clone();
     let mut alias = None;
+    let mut overwrite = false;
 
     let mut i = 1;
     while i < args.len() {
@@ -403,12 +405,19 @@ fn parse_open_waveform(args: &[String]) -> Result<Command, String> {
                     return Err("--alias requires a value".to_string());
                 }
             }
+            "--overwrite" => {
+                overwrite = true;
+            }
             _ => return Err(format!("Unknown option '{}' for open_waveform", args[i])),
         }
         i += 1;
     }
 
-    Ok(Command::OpenWaveform { file_path, alias })
+    Ok(Command::OpenWaveform {
+        file_path,
+        alias,
+        overwrite,
+    })
 }
 
 fn parse_close_waveform(args: &[String]) -> Result<Command, String> {
@@ -785,6 +794,7 @@ mod tests {
             Command::OpenWaveform {
                 file_path: "/path/to/test.vcd".to_string(),
                 alias: None,
+                overwrite: false,
             }
         );
     }
@@ -806,6 +816,23 @@ mod tests {
             Command::OpenWaveform {
                 file_path: "/path/to/test.vcd".to_string(),
                 alias: Some("mywave".to_string()),
+                overwrite: false,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_open_waveform_with_overwrite() {
+        let args: Vec<String> = vec!["open_waveform", "test.vcd", "--overwrite"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert_eq!(
+            parse_args(args).unwrap()[0],
+            Command::OpenWaveform {
+                file_path: "test.vcd".to_string(),
+                alias: None,
+                overwrite: true,
             }
         );
     }
@@ -826,6 +853,7 @@ mod tests {
             Command::OpenWaveform {
                 file_path: "/path/to/test.vcd".to_string(),
                 alias: Some("wave1".to_string()),
+                overwrite: false,
             }
         );
     }
@@ -1375,6 +1403,7 @@ mod tests {
             Command::OpenWaveform {
                 file_path: "test.vcd".to_string(),
                 alias: None,
+                overwrite: false,
             }
         );
 

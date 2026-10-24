@@ -67,6 +67,8 @@ The server provides 8 MCP tools:
 1. **open_waveform** - Open a waveform file
    - `file_path`: Path to .vcd or .fst file
    - `alias`: Optional alias for the waveform (defaults to filename)
+   - `overwrite`: Optional flag to reopen a waveform whose id is already open (default: false);
+     otherwise opening an id twice is an error
 
    When the file does not exist, files with a similar name in the same directory are suggested.
    Failures are reported as tool errors, like every other tool.
@@ -232,7 +234,8 @@ waveform-cli open_waveform test.vcd --alias mywave -- \\
 
 ### CLI Commands
 
-- **open_waveform** `<file_path>` [--alias `<name>`] - Open waveform file
+- **open_waveform** `<file_path>` [--alias `<name>`] [--overwrite] - Open waveform file
+  (`--overwrite` reopens a waveform that is already open)
 - **close_waveform** `<id>` - Close waveform
 - **list_signals** `<id>` [--contains `<p>`] [--glob `<p>`] [--regex `<p>`] [--hierarchy `<h>`] [--recursive `<bool>`] [--limit `<n>`]
   - `--contains` / `-p` / `--pattern`: case-insensitive substring match (default)

@@ -42,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a default (an invalid `--limit` used to mean "unlimited")
 
 ### Changed
+- `open_waveform` no longer silently replaces an already open waveform with the same id; it
+  reports the conflict unless `overwrite` (`--overwrite`) is given, which reloads the file
 - All MCP tools now report failures as JSON-RPC errors (`invalid_params`); `open_waveform` and
   `close_waveform` used to return a successful result whose text said "not found"
 - CLI `-h` now means help; the `list_signals` scope filter is `--hierarchy` only

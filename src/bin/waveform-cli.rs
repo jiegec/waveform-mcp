@@ -49,15 +49,18 @@ impl WaveformStore {
         }
     }
 
-    fn open_waveform(&mut self, file_path: &str, alias: Option<String>) -> Result<String, String> {
+    /// Open a waveform, returning its id and whether an existing one was replaced.
+    fn open_waveform(
+        &mut self,
+        file_path: &str,
+        alias: Option<String>,
+        overwrite: bool,
+    ) -> Result<(String, bool), String> {
         let path = PathBuf::from(file_path);
 
         if !path.exists() {
             return Err(file_not_found_message(&path));
         }
-
-        let waveform =
-            wellen::simple::read(&path).map_err(|e| format!("Failed to read waveform: {}", e))?;
 
         let id = alias.unwrap_or_else(|| {
             path.file_name()
@@ -66,8 +69,18 @@ impl WaveformStore {
                 .to_string()
         });
 
-        self.waveforms.insert(id.clone(), waveform);
-        Ok(id)
+        if self.waveforms.contains_key(&id) && !overwrite {
+            return Err(format!(
+                "waveform '{}' is already open; close it first, pass a different --alias, or use --overwrite",
+                id
+            ));
+        }
+
+        let waveform =
+            wellen::simple::read(&path).map_err(|e| format!("Failed to read waveform: {}", e))?;
+
+        let replaced = self.waveforms.insert(id.clone(), waveform).is_some();
+        Ok((id, replaced))
     }
 
     fn close_waveform(&mut self, waveform_id: &str) -> Result<(), String> {
@@ -102,9 +115,17 @@ impl WaveformStore {
 
 fn execute_command(store: &mut WaveformStore, cmd: &Command) -> Result<String, String> {
     match cmd {
-        Command::OpenWaveform { file_path, alias } => {
-            let id = store.open_waveform(file_path, alias.clone())?;
-            Ok(format!("Waveform opened successfully with id: {}", id))
+        Command::OpenWaveform {
+            file_path,
+            alias,
+            overwrite,
+        } => {
+            let (id, replaced) = store.open_waveform(file_path, alias.clone(), *overwrite)?;
+            if replaced {
+                Ok(format!("Waveform reopened successfully with id: {}", id))
+            } else {
+                Ok(format!("Waveform opened successfully with id: {}", id))
+            }
         }
         Command::CloseWaveform { waveform_id } => {
             store.close_waveform(waveform_id)?;

@@ -64,6 +64,9 @@ pub struct OpenWaveformArgs {
     pub file_path: String,
     #[serde(default)]
     pub alias: Option<String>,
+    /// Replace an already open waveform with the same id instead of failing.
+    #[serde(default)]
+    pub overwrite: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -240,11 +243,23 @@ impl WaveformHandler {
         });
 
         let mut waveforms = self.waveforms.write().await;
-        waveforms.insert(alias.clone(), waveform);
 
+        if waveforms.contains_key(&alias) && !args.overwrite.unwrap_or(false) {
+            return Err(McpError::invalid_params(
+                format!(
+                    "waveform '{}' is already open; close it first, pass a different alias, or set overwrite to true",
+                    alias
+                ),
+                None,
+            ));
+        }
+
+        let replaced = waveforms.insert(alias.clone(), waveform).is_some();
+
+        let action = if replaced { "reopened" } else { "opened" };
         Ok(CallToolResult::success(vec![ContentBlock::text(format!(
-            "Waveform opened successfully with alias: {}",
-            alias
+            "Waveform {} successfully with alias: {}",
+            action, alias
         ))]))
     }
 
