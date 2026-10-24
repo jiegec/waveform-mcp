@@ -123,7 +123,8 @@ The server provides 8 MCP tools:
 5. **read_signal** - Read signal values at specific time indices
    - `waveform_id`: ID or alias of the waveform
    - `signal_path`: Hierarchical path to signal (e.g., "top.module.signal")
-   - `time_index`: Optional single time index to read
+   - `time_index`: Optional single time index to read (provide exactly one of
+     `time_index` or `time_indices`)
    - `time_indices`: Optional array of time indices to read multiple values
 
    **Example response:**
