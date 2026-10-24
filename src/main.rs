@@ -76,15 +76,53 @@ pub struct ListSignalsArgs {
     /// A single string or an array of strings; multiple patterns are OR-ed.
     #[serde(default, alias = "name_pattern")]
     pub pattern: Option<PatternArg>,
-    /// How `pattern` is interpreted: "substring" (default), "glob", or "regex".
+    /// How `pattern` is interpreted.
     #[serde(default)]
-    pub match_mode: Option<String>,
+    pub match_mode: Option<MatchModeArg>,
     #[serde(default)]
     pub hierarchy_prefix: Option<String>,
     #[serde(default = "default_recursive")]
     pub recursive: Option<bool>,
     #[serde(default = "default_list_signals_limit")]
     pub limit: Option<isize>,
+}
+
+/// `match_mode` as accepted over MCP.
+///
+/// A typed enum so the JSON schema lists the allowed values; the aliases keep the names that
+/// `MatchMode::parse` used to accept working.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum MatchModeArg {
+    /// Case-insensitive substring match.
+    Substring,
+    /// Case-insensitive glob over the whole path, e.g. `*bank*`.
+    Glob,
+    /// Regular expression, case-insensitive unless `(?-i)` is used.
+    Regex,
+}
+
+impl<'de> Deserialize<'de> for MatchModeArg {
+    /// Accept the same names (and aliases) as [`MatchMode::parse`], with its error message.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        match MatchMode::parse(&value) {
+            Ok(MatchMode::Substring) => Ok(Self::Substring),
+            Ok(MatchMode::Glob) => Ok(Self::Glob),
+            Ok(MatchMode::Regex) => Ok(Self::Regex),
+            Err(error) => Err(serde::de::Error::custom(error)),
+        }
+    }
+}
+
+impl From<MatchModeArg> for MatchMode {
+    fn from(value: MatchModeArg) -> Self {
+        match value {
+            MatchModeArg::Substring => Self::Substring,
+            MatchModeArg::Glob => Self::Glob,
+            MatchModeArg::Regex => Self::Regex,
+        }
+    }
 }
 
 /// Accept either a single pattern or a list of patterns.
@@ -264,7 +302,7 @@ impl WaveformHandler {
     }
 
     #[tool(
-        description = "List all signals in an open waveform. Use waveform_id from open_waveform. Optional: pattern (string or array, matched against the full signal path; multiple patterns are OR-ed) with match_mode 'substring' (case-insensitive, default), 'glob' (case-insensitive, e.g. '*bank*') or 'regex' (case-insensitive by default, use '(?-i)' to opt out); hierarchy_prefix (e.g., 'top.module', AND-ed with the patterns), recursive (default: true), and limit."
+        description = "List all signals in an open waveform. Use waveform_id from open_waveform. Optional: pattern (string or array, matched against the full signal path; multiple patterns are OR-ed) with match_mode 'substring' (case-insensitive substring, default), 'glob' (case-insensitive glob over the whole path, e.g. '*bank*') or 'regex' (case-insensitive regex by default, use '(?-i)' to opt out); hierarchy_prefix (e.g., 'top.module', AND-ed with the patterns), recursive (default: true), and limit."
     )]
     async fn list_signals(
         &self,
@@ -280,12 +318,7 @@ impl WaveformHandler {
         let hierarchy = waveform.hierarchy();
         let recursive = args.recursive.unwrap_or(true);
 
-        let mode = match args.match_mode.as_deref() {
-            Some(value) => {
-                MatchMode::parse(value).map_err(|e| McpError::invalid_params(e, None))?
-            }
-            None => MatchMode::default(),
-        };
+        let mode: MatchMode = args.match_mode.map(MatchMode::from).unwrap_or_default();
         let patterns: Vec<(String, MatchMode)> = args
             .pattern
             .clone()
@@ -592,4 +625,42 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn match_mode_arg_accepts_canonical_names_and_aliases() {
+        for (json, expected) in [
+            (r#""substring""#, MatchMode::Substring),
+            (r#""SUBSTR""#, MatchMode::Substring),
+            (r#""contains""#, MatchMode::Substring),
+            (r#""glob""#, MatchMode::Glob),
+            (r#""wildcard""#, MatchMode::Glob),
+            (r#""regex""#, MatchMode::Regex),
+            (r#""Regexp""#, MatchMode::Regex),
+        ] {
+            let arg: MatchModeArg = serde_json::from_str(json).expect(json);
+            assert_eq!(MatchMode::from(arg), expected, "input: {json}");
+        }
+    }
+
+    #[test]
+    fn match_mode_arg_rejects_unknown_names_with_a_helpful_message() {
+        let error = serde_json::from_str::<MatchModeArg>(r#""fuzzy""#).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Unknown match mode 'fuzzy'; expected 'substring', 'glob', or 'regex'"
+        );
+    }
+
+    #[test]
+    fn match_mode_arg_serializes_canonically() {
+        assert_eq!(
+            serde_json::to_string(&MatchModeArg::Glob).expect("serializable"),
+            r#""glob""#
+        );
+    }
 }

@@ -42,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a default (an invalid `--limit` used to mean "unlimited")
 
 ### Changed
+- MCP `list_signals.match_mode` is now a typed enum in the tool schema (clients see
+  `substring` / `glob` / `regex` and their descriptions); the old aliases such as `regexp` and
+  `wildcard` are still accepted
 - `open_waveform` no longer silently replaces an already open waveform with the same id; it
   reports the conflict unless `overwrite` (`--overwrite`) is given, which reloads the file
 - All MCP tools now report failures as JSON-RPC errors (`invalid_params`); `open_waveform` and
