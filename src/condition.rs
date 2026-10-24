@@ -2,7 +2,7 @@
 
 use super::{
     formatting::format_signal_value, formatting::format_time, hierarchy::find_var_by_path,
-    hierarchy::signal_not_found_message,
+    hierarchy::signal_not_found_message, signal::validate_time_range,
 };
 use lalrpop_util::lalrpop_mod;
 use num_bigint::BigUint;
@@ -403,30 +403,6 @@ pub(super) fn parse_hex_literal(s: &str) -> Literal {
 ///
 /// # Returns
 /// A vector of formatted event strings, or an error if the operation fails.
-fn validate_time_range(
-    time_table_len: usize,
-    start_idx: usize,
-    end_idx: usize,
-) -> Result<(), String> {
-    let max_idx = time_table_len.saturating_sub(1);
-
-    if start_idx > max_idx {
-        return Err(format!(
-            "start time index {} out of range (max: {})",
-            start_idx, max_idx
-        ));
-    }
-
-    if start_idx > end_idx {
-        return Err(format!(
-            "start time index {} is after end time index {}",
-            start_idx, end_idx
-        ));
-    }
-
-    Ok(())
-}
-
 pub fn find_conditional_events(
     waveform: &mut wellen::simple::Waveform,
     condition: &str,

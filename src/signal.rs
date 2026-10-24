@@ -235,7 +235,10 @@ pub fn get_signal_metadata(
 }
 
 /// Validate a time index range against the waveform's time table.
-fn validate_time_range(
+///
+/// Shared by `find_signal_events` and `find_conditional_events` so that out-of-range and
+/// inverted ranges are reported consistently instead of indexing out of bounds.
+pub(crate) fn validate_time_range(
     time_table_len: usize,
     start_idx: usize,
     end_idx: usize,
