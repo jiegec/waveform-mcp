@@ -253,6 +253,9 @@ waveform-cli open_waveform test.vcd --alias mywave -- \\
 
 Every command also accepts `--help`/`-h`, and `waveform-cli --version` prints the version.
 
+Options accept both `--flag value` and `--flag=value`; use the `=` form when the value itself
+starts with `-` (for example `--contains=-h`).
+
 
 ## Development
 

@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- CLI options accept the `--flag=value` form (e.g. `--glob='*bank*'`, `--limit=-1`), which also
+  makes values starting with `-` possible (`--contains=-h`); a `-h` used as an option value is
+  no longer mistaken for a help request, and empty option values are rejected
 - `list_signals` supports glob (`match_mode: "glob"`, CLI `--glob`) and regular expression
   (`match_mode: "regex"`, CLI `--regex`) signal path matching
 - Multiple `list_signals` patterns of the same mode can be given at once; they are OR-ed together

@@ -118,17 +118,43 @@ pub fn parse_args(args: Vec<String>) -> Result<Vec<Command>, String> {
 }
 
 /// Split the raw arguments into per-command groups using "--" as the separator.
+///
+/// `--flag=value` is normalised to `--flag value` first, so values that start with `-`
+/// (for example `--contains=-h`) can be passed without being taken for options.
 pub fn split_command_groups(args: &[String]) -> Vec<Vec<String>> {
     let mut groups: Vec<Vec<String>> = vec![vec![]];
-    for arg in args {
+    for arg in expand_inline_values(args) {
         if arg == "--" {
             groups.push(vec![]);
         } else {
-            groups.last_mut().unwrap().push(arg.clone());
+            groups.last_mut().unwrap().push(arg);
         }
     }
     groups.retain(|group| !group.is_empty());
     groups
+}
+
+/// Expand `--flag=value` (and `-f=value`) into two arguments.
+fn expand_inline_values(args: &[String]) -> Vec<String> {
+    let mut expanded = Vec::with_capacity(args.len());
+
+    for arg in args {
+        match arg.split_once('=') {
+            Some((flag, value)) if is_inline_value_flag(flag) => {
+                expanded.push(flag.to_string());
+                expanded.push(value.to_string());
+            }
+            _ => expanded.push(arg.clone()),
+        }
+    }
+
+    expanded
+}
+
+/// Whether `flag` looks like a long/short option that can carry an inline value.
+fn is_inline_value_flag(flag: &str) -> bool {
+    // `--` is the command separator and a lone `-` is a positional value.
+    flag.len() >= 2 && flag.starts_with('-') && flag != "--" && flag != "-"
 }
 
 /// The general usage/help text.
@@ -166,6 +192,8 @@ pub fn usage_text() -> String {
         "  --glob <p>      case-insensitive glob over the whole path, e.g. '*bank*'",
         "  --regex <p>     regular expression, case-insensitive unless '(?-i)' is used",
         "  The flag selects the match mode and can be repeated to OR several patterns.",
+        "  Options also accept the --flag=value form, e.g. --glob='*bank*' or",
+        "  --contains=-h (useful when a value starts with '-').",
         "",
         "Examples:",
         "  waveform-cli open_waveform test.vcd",
@@ -303,6 +331,9 @@ Examples:
 /// * `["help"]`, `["--help"]`, `["-h"]` -> `Some(None)` (general help)
 /// * `["help", "list_signals"]` -> `Some(Some("list_signals"))`
 /// * `["list_signals", "wave", "--help"]` -> `Some(Some("list_signals"))`
+///
+/// Every option in this CLI takes a value, so a `-h` that is the value of an option
+/// (`--contains -h`, `--contains=-h`) is not a help request.
 pub fn help_request(args: &[String]) -> Option<Option<String>> {
     let first = args.first()?;
 
@@ -318,12 +349,16 @@ pub fn help_request(args: &[String]) -> Option<Option<String>> {
     }
 
     for group in split_command_groups(args) {
-        if group
-            .iter()
-            .skip(1)
-            .any(|arg| arg == "--help" || arg == "-h")
-        {
-            return Some(Some(group[0].clone()));
+        let mut tokens = group.iter().skip(1);
+        while let Some(token) = tokens.next() {
+            if token == "--help" || token == "-h" {
+                return Some(Some(group[0].clone()));
+            }
+
+            if is_inline_value_flag(token) {
+                // The next token is this option's value; skip it.
+                tokens.next();
+            }
         }
     }
 
@@ -399,10 +434,10 @@ fn parse_open_waveform(args: &[String]) -> Result<Command, String> {
         match args[i].as_str() {
             "--alias" | "-a" => {
                 i += 1;
-                if i < args.len() {
+                if i < args.len() && !args[i].is_empty() {
                     alias = Some(args[i].clone());
                 } else {
-                    return Err("--alias requires a value".to_string());
+                    return Err("--alias requires a non-empty value".to_string());
                 }
             }
             "--overwrite" => {
@@ -531,6 +566,10 @@ fn add_pattern(
             mode_flag(mode),
             mode_flag(current)
         ));
+    }
+
+    if pattern.is_empty() {
+        return Err(format!("{} requires a non-empty value", mode_flag(mode)));
     }
 
     *selected_mode = Some(mode);
@@ -1063,6 +1102,36 @@ mod tests {
     }
 
     #[test]
+    fn test_help_request_ignores_values_that_look_like_help() {
+        for args in [
+            vec!["list_signals", "wave", "--contains", "-h"],
+            vec!["list_signals", "wave", "--glob", "--help"],
+        ] {
+            let args: Vec<String> = args.into_iter().map(String::from).collect();
+            assert_eq!(help_request(&args), None, "args: {:?}", args);
+        }
+
+        // Help after an option and its value is still detected.
+        let args: Vec<String> = vec!["list_signals", "wave", "--glob", "*bank*", "--help"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert_eq!(help_request(&args), Some(Some("list_signals".to_string())));
+    }
+
+    #[test]
+    fn test_parse_rejects_empty_pattern() {
+        let args: Vec<String> = vec!["list_signals", "wave", "--contains="]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert_eq!(
+            parse_args(args).unwrap_err(),
+            "--contains requires a non-empty value"
+        );
+    }
+
+    #[test]
     fn test_help_request_none_for_normal_commands() {
         let args: Vec<String> = vec!["open_waveform", "test.vcd"]
             .into_iter()
@@ -1119,6 +1188,57 @@ mod tests {
         let help = command_help("list_signals").expect("help exists");
         for expected in ["--contains", "--glob", "--regex", "--hierarchy", "--limit"] {
             assert!(help.contains(expected), "help is missing {expected}");
+        }
+    }
+
+    #[test]
+    fn test_parse_inline_option_values() {
+        let args: Vec<String> = vec![
+            "list_signals",
+            "wave",
+            "--glob=*bank*",
+            "--limit=5",
+            "--hierarchy=tb.dut",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+        assert_eq!(
+            parse_args(args).unwrap()[0],
+            Command::ListSignals {
+                waveform_id: "wave".to_string(),
+                patterns: vec![SignalPattern {
+                    pattern: "*bank*".to_string(),
+                    mode: MatchMode::Glob,
+                }],
+                hierarchy_prefix: Some("tb.dut".to_string()),
+                recursive: true,
+                limit: Some(5),
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_inline_value_starting_with_dash() {
+        // Without the inline form, `-h` would be taken for a help request.
+        assert_eq!(
+            help_request(&[
+                "list_signals".to_string(),
+                "wave".to_string(),
+                "--contains=-h".to_string()
+            ]),
+            None
+        );
+
+        let args: Vec<String> = vec!["list_signals", "wave", "--contains=-h"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        match &parse_args(args).unwrap()[0] {
+            Command::ListSignals { patterns, .. } => {
+                assert_eq!(patterns[0].pattern, "-h");
+            }
+            other => panic!("unexpected command: {other:?}"),
         }
     }
 
