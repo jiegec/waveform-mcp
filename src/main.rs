@@ -14,9 +14,9 @@ use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::prelude::*;
 use waveform_mcp::{
-    MatchMode, SignalMatcher, find_conditional_events, find_scope_by_path, find_signal_by_path,
-    find_signal_events, format_signal_query_result, get_signal_metadata, list_signals,
-    not_found_message, read_hierarchy, read_signal_values, scope_not_found_message,
+    MatchMode, SignalMatcher, file_not_found_message, find_conditional_events, find_scope_by_path,
+    find_signal_by_path, find_signal_events, format_signal_query_result, get_signal_metadata,
+    list_signals, not_found_message, read_hierarchy, read_signal_values, scope_not_found_message,
     signal_not_found_message,
 };
 
@@ -218,10 +218,9 @@ impl WaveformHandler {
         let path = PathBuf::from(&args.file_path);
 
         if !path.exists() {
-            return Ok(CallToolResult::error(vec![ContentBlock::text(format!(
-                "File not found: {}",
-                args.file_path
-            ))]));
+            return Ok(CallToolResult::error(vec![ContentBlock::text(
+                file_not_found_message(&path),
+            )]));
         }
 
         let waveform = match wellen::simple::read(&path) {

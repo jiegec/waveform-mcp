@@ -30,4 +30,4 @@ pub use signal::format_signal_query_result;
 pub use signal::get_signal_metadata;
 pub use signal::list_signals;
 pub use signal::read_signal_values;
-pub use suggest::{did_you_mean, not_found_message};
+pub use suggest::{did_you_mean, file_not_found_message, not_found_message};

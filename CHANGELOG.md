@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Not-found errors now list the available names, and suggest the closest match for typos
   (waveform ids, signal paths and scopes)
+- `open_waveform` suggests similarly named files (same extension preferred) when the given path
+  does not exist
 - `list_signals` suggests close signal paths when nothing matches, including when a glob or regex
   pattern was mistyped or when glob wildcards were used in substring mode
 - `waveform-cli --help`/`-h`, `waveform-cli help <command>` and `waveform-cli <command> --help`

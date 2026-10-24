@@ -6,6 +6,7 @@
 //! abbreviated paths (`abc_bank` vs `tb.dut.abc_bank`) are suggested.
 
 use std::cmp::Ordering;
+use std::path::Path;
 
 use strsim::normalized_damerau_levenshtein;
 
@@ -163,6 +164,57 @@ pub fn not_found_message(kind: &str, query: &str, candidates: &[String]) -> Stri
     )
 }
 
+/// Build a "not found" message for a missing waveform file.
+///
+/// Looks in the directory of `path` for files with a similar name (preferring the same
+/// extension) so typos and wrong paths get a helpful hint.
+pub fn file_not_found_message(path: &Path) -> String {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    let directory = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+
+    let mut candidates: Vec<String> = std::fs::read_dir(directory)
+        .map(|entries| {
+            entries
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
+                .filter_map(|entry| entry.file_name().into_string().ok())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Prefer files with the same extension, which are the ones worth suggesting.
+    let extension = path.extension().and_then(|extension| extension.to_str());
+    if let Some(extension) = extension {
+        let same_extension: Vec<String> = candidates
+            .iter()
+            .filter(|candidate| {
+                Path::new(candidate)
+                    .extension()
+                    .and_then(|candidate_extension| candidate_extension.to_str())
+                    == Some(extension)
+            })
+            .cloned()
+            .collect();
+        if !same_extension.is_empty() {
+            candidates = same_extension;
+        }
+    }
+
+    let message = not_found_message("file", file_name, &candidates);
+
+    if directory == Path::new(".") {
+        message
+    } else {
+        format!("{} (searched in {})", message, directory.display())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,6 +310,33 @@ mod tests {
         let candidates: Vec<String> = (0..15).map(|index| format!("w{index}")).collect();
         let message = not_found_message("signal", "zzzz", &candidates);
         assert!(message.contains("(15 total)"), "message: {message}");
+    }
+
+    #[test]
+    fn file_not_found_suggests_similar_files_in_the_same_directory() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        std::fs::write(directory.path().join("design.vcd"), "").expect("write vcd");
+        std::fs::write(directory.path().join("design.fst"), "").expect("write fst");
+
+        let message = file_not_found_message(&directory.path().join("desgin.vcd"));
+        assert!(
+            message.contains("Did you mean 'design.vcd'"),
+            "message: {message}"
+        );
+        assert!(message.contains("searched in"), "message: {message}");
+
+        // Same-extension preference: a .fst typo suggests the .fst file.
+        let message = file_not_found_message(&directory.path().join("desgin.fst"));
+        assert!(
+            message.contains("Did you mean 'design.fst'"),
+            "message: {message}"
+        );
+    }
+
+    #[test]
+    fn file_not_found_handles_missing_directories() {
+        let message = file_not_found_message(Path::new("/nonexistent/dir/wave.vcd"));
+        assert!(message.contains("not found"), "message: {message}");
     }
 
     #[test]

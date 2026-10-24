@@ -68,6 +68,8 @@ The server provides 8 MCP tools:
    - `file_path`: Path to .vcd or .fst file
    - `alias`: Optional alias for the waveform (defaults to filename)
 
+   When the file does not exist, files with a similar name in the same directory are suggested.
+
    **Example response:**
    ```
    Waveform opened successfully with alias: waveform.vcd

@@ -15,10 +15,10 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use waveform_mcp::{
-    Command, SignalMatcher, command_help, find_conditional_events, find_scope_by_path,
-    find_signal_by_path, find_signal_events, format_signal_query_result, get_signal_metadata,
-    help_request, list_signals, not_found_message, parse_args, read_hierarchy, read_signal_values,
-    scope_not_found_message, signal_not_found_message, usage_text,
+    Command, SignalMatcher, command_help, file_not_found_message, find_conditional_events,
+    find_scope_by_path, find_signal_by_path, find_signal_events, format_signal_query_result,
+    get_signal_metadata, help_request, list_signals, not_found_message, parse_args, read_hierarchy,
+    read_signal_values, scope_not_found_message, signal_not_found_message, usage_text,
 };
 
 /// Print the help text for `command`, or the general usage text when `None`.
@@ -52,7 +52,7 @@ impl WaveformStore {
         let path = PathBuf::from(file_path);
 
         if !path.exists() {
-            return Err(format!("File not found: {}", file_path));
+            return Err(file_not_found_message(&path));
         }
 
         let waveform =
