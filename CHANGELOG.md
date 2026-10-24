@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   does not exist
 - `find_conditional_events` suggests close signal paths when the condition references an unknown
   signal
+- `list_signals` reports when `limit` truncated the result, and no longer silently looks complete
 - `list_signals` suggests close signal paths when nothing matches, including when a glob or regex
   pattern was mistyped or when glob wildcards were used in substring mode
 - `waveform-cli --help`/`-h`, `waveform-cli help <command>` and `waveform-cli <command> --help`

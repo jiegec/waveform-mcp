@@ -17,8 +17,9 @@ use std::path::PathBuf;
 use waveform_mcp::{
     Command, SignalMatcher, command_help, file_not_found_message, find_conditional_events,
     find_scope_by_path, find_signal_by_path, find_signal_events, format_signal_query_result,
-    get_signal_metadata, help_request, list_signals, not_found_message, parse_args, read_hierarchy,
-    read_signal_values, scope_not_found_message, signal_not_found_message, usage_text,
+    get_signal_metadata, help_request, list_signals_detailed, not_found_message, parse_args,
+    read_hierarchy, read_signal_values, scope_not_found_message, signal_not_found_message,
+    usage_text,
 };
 
 /// Print the help text for `command`, or the general usage text when `None`.
@@ -132,7 +133,7 @@ fn execute_command(store: &mut WaveformStore, cmd: &Command) -> Result<String, S
                 return Err(scope_not_found_message(hierarchy, prefix));
             }
 
-            let signals = list_signals(
+            let listing = list_signals_detailed(
                 hierarchy,
                 &matcher,
                 hierarchy_prefix.as_deref(),
@@ -140,7 +141,7 @@ fn execute_command(store: &mut WaveformStore, cmd: &Command) -> Result<String, S
                 *limit,
             );
 
-            Ok(format_signal_query_result(hierarchy, &specs, &signals))
+            Ok(format_signal_query_result(hierarchy, &specs, &listing))
         }
         Command::ReadHierarchy {
             waveform_id,

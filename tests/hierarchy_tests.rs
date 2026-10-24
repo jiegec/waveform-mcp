@@ -6,7 +6,7 @@ use waveform_mcp::find_scope_by_path;
 use waveform_mcp::find_signal_by_path;
 use waveform_mcp::list_signals;
 use waveform_mcp::read_hierarchy;
-use waveform_mcp::{MatchMode, SignalMatcher};
+use waveform_mcp::{MatchMode, SignalListing, SignalMatcher};
 
 #[test]
 fn test_signal_full_name() {
@@ -642,9 +642,11 @@ $enddefinitions $end\n\
     let waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
     let hierarchy = waveform.hierarchy();
 
+    let empty = SignalListing::default();
+
     // A glob that matches nothing still suggests the closest signal path.
     let patterns = vec![("*bank*".to_string(), MatchMode::Glob)];
-    let result = waveform_mcp::format_signal_query_result(hierarchy, &patterns, &[]);
+    let result = waveform_mcp::format_signal_query_result(hierarchy, &patterns, &empty);
     assert!(
         result.starts_with("No signals matched."),
         "result: {result}"
@@ -653,15 +655,64 @@ $enddefinitions $end\n\
 
     // A literal glob in substring mode gets the wildcard hint.
     let patterns = vec![("*bank*".to_string(), MatchMode::Substring)];
-    let result = waveform_mcp::format_signal_query_result(hierarchy, &patterns, &[]);
+    let result = waveform_mcp::format_signal_query_result(hierarchy, &patterns, &empty);
     assert!(result.contains("hint:"), "result: {result}");
 
-    // Successful queries keep the plain listing format.
+    // Successful queries use a plain listing, with correct pluralisation.
     let patterns = vec![("bank".to_string(), MatchMode::Substring)];
-    let result = waveform_mcp::format_signal_query_result(
-        hierarchy,
-        &patterns,
-        &["tb.abc_bank".to_string()],
-    );
-    assert_eq!(result, "Found 1 signals:\ntb.abc_bank");
+    let listing = SignalListing {
+        signals: vec!["tb.abc_bank".to_string()],
+        truncated: false,
+    };
+    let result = waveform_mcp::format_signal_query_result(hierarchy, &patterns, &listing);
+    assert_eq!(result, "Found 1 signal:\ntb.abc_bank");
+
+    // A limit that cut the result short is called out instead of looking complete.
+    let listing = SignalListing {
+        signals: vec!["tb.abc_bank".to_string()],
+        truncated: true,
+    };
+    let result = waveform_mcp::format_signal_query_result(hierarchy, &patterns, &listing);
+    assert!(result.contains("limit reached"), "result: {result}");
+    assert!(result.contains("tb.abc_bank"), "result: {result}");
+
+    // No patterns and no signals is "found nothing", not "nothing matched a pattern".
+    let result = waveform_mcp::format_signal_query_result(hierarchy, &[], &empty);
+    assert_eq!(result, "No signals found.");
+}
+
+#[test]
+fn test_list_signals_detailed_reports_truncation() {
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module tb $end\n\
+$var wire 1 ! clk $end\n\
+$var wire 1 \" data $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+0!\n\
+0\"";
+
+    let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    write!(temp_file, "{}", vcd_content).expect("Failed to write VCD content");
+    temp_file.flush().expect("Failed to flush");
+
+    let waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+    let hierarchy = waveform.hierarchy();
+    let matcher = SignalMatcher::all();
+
+    let listing = waveform_mcp::list_signals_detailed(hierarchy, &matcher, None, true, Some(1));
+    assert_eq!(listing.signals.len(), 1);
+    assert!(listing.truncated, "limit of 1 should truncate 2 signals");
+
+    let listing = waveform_mcp::list_signals_detailed(hierarchy, &matcher, None, true, Some(2));
+    assert_eq!(listing.signals.len(), 2);
+    assert!(!listing.truncated, "an exact limit is not a truncation");
+
+    let listing = waveform_mcp::list_signals_detailed(hierarchy, &matcher, None, true, Some(-1));
+    assert_eq!(listing.signals.len(), 2);
+    assert!(!listing.truncated);
 }

@@ -16,8 +16,8 @@ use tracing_subscriber::prelude::*;
 use waveform_mcp::{
     MatchMode, SignalMatcher, file_not_found_message, find_conditional_events, find_scope_by_path,
     find_signal_by_path, find_signal_events, format_signal_query_result, get_signal_metadata,
-    list_signals, not_found_message, read_hierarchy, read_signal_values, scope_not_found_message,
-    signal_not_found_message,
+    list_signals_detailed, not_found_message, read_hierarchy, read_signal_values,
+    scope_not_found_message, signal_not_found_message,
 };
 
 /// Command line arguments for the waveform MCP server
@@ -294,7 +294,7 @@ impl WaveformHandler {
             ));
         }
 
-        let signals = list_signals(
+        let listing = list_signals_detailed(
             hierarchy,
             &matcher,
             args.hierarchy_prefix.as_deref(),
@@ -302,7 +302,7 @@ impl WaveformHandler {
             args.limit,
         );
 
-        let body = format_signal_query_result(hierarchy, &patterns, &signals);
+        let body = format_signal_query_result(hierarchy, &patterns, &listing);
 
         Ok(CallToolResult::success(vec![ContentBlock::text(body)]))
     }

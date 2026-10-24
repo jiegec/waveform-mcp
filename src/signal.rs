@@ -9,6 +9,15 @@ use super::{
     matcher::glob_hint, matcher::pattern_seed, suggest::did_you_mean,
 };
 
+/// Result of a signal listing query.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SignalListing {
+    /// Matching signal paths, possibly cut short by `limit`.
+    pub signals: Vec<String>,
+    /// Whether more signals matched than were returned.
+    pub truncated: bool,
+}
+
 /// List signals in a waveform hierarchy with optional filtering.
 ///
 /// # Arguments
@@ -21,7 +30,8 @@ use super::{
 /// * `limit` - Optional maximum number of signals to return. Use -1 for unlimited.
 ///
 /// # Returns
-/// A vector of signal paths.
+/// A vector of signal paths. Use [`list_signals_detailed`] to also learn whether the limit
+/// truncated the result.
 pub fn list_signals(
     hierarchy: &wellen::Hierarchy,
     matcher: &SignalMatcher,
@@ -29,6 +39,17 @@ pub fn list_signals(
     recursive: bool,
     limit: Option<isize>,
 ) -> Vec<String> {
+    list_signals_detailed(hierarchy, matcher, hierarchy_prefix, recursive, limit).signals
+}
+
+/// List signals like [`list_signals`], reporting whether `limit` truncated the result.
+pub fn list_signals_detailed(
+    hierarchy: &wellen::Hierarchy,
+    matcher: &SignalMatcher,
+    hierarchy_prefix: Option<&str>,
+    recursive: bool,
+    limit: Option<isize>,
+) -> SignalListing {
     let mut signals = Vec::new();
 
     if let Some(prefix) = hierarchy_prefix {
@@ -48,13 +69,16 @@ pub fn list_signals(
     }
 
     // Apply limit if provided and not -1 (unlimited)
+    let mut truncated = false;
     if let Some(limit) = limit
         && limit >= 0
     {
-        signals.truncate(limit as usize);
+        let limit = limit as usize;
+        truncated = signals.len() > limit;
+        signals.truncate(limit);
     }
 
-    signals
+    SignalListing { signals, truncated }
 }
 
 /// Build the user-facing text for a `list_signals` query.
@@ -66,17 +90,36 @@ pub fn list_signals(
 /// # Arguments
 /// * `hierarchy` - The waveform hierarchy
 /// * `patterns` - The `(pattern, match mode)` pairs the user asked for
-/// * `signals` - The signals that actually matched
+/// * `listing` - The result of the listing query
 pub fn format_signal_query_result(
     hierarchy: &wellen::Hierarchy,
     patterns: &[(String, MatchMode)],
-    signals: &[String],
+    listing: &SignalListing,
 ) -> String {
-    if !signals.is_empty() {
-        return format!("Found {} signals:\n{}", signals.len(), signals.join("\n"));
+    let count = listing.signals.len();
+
+    if !listing.signals.is_empty() {
+        let noun = if count == 1 { "signal" } else { "signals" };
+        let header = if listing.truncated {
+            format!(
+                "Showing the first {count} {noun} (limit reached; raise limit or use -1 for all):"
+            )
+        } else {
+            format!("Found {count} {noun}:")
+        };
+
+        return format!("{}\n{}", header, listing.signals.join("\n"));
     }
 
-    let mut output = String::from("No signals matched.");
+    if listing.truncated {
+        return "No signals listed (limit is 0).".to_string();
+    }
+
+    let mut output = if patterns.is_empty() {
+        String::from("No signals found.")
+    } else {
+        String::from("No signals matched.")
+    };
 
     let suggestions = fuzzy_signal_suggestions(hierarchy, patterns);
     if !suggestions.is_empty() {
