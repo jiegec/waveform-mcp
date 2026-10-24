@@ -234,6 +234,31 @@ pub fn get_signal_metadata(
     Ok(info)
 }
 
+/// Validate a time index range against the waveform's time table.
+fn validate_time_range(
+    time_table_len: usize,
+    start_idx: usize,
+    end_idx: usize,
+) -> Result<(), String> {
+    let max_idx = time_table_len.saturating_sub(1);
+
+    if start_idx > max_idx {
+        return Err(format!(
+            "start time index {} out of range (max: {})",
+            start_idx, max_idx
+        ));
+    }
+
+    if start_idx > end_idx {
+        return Err(format!(
+            "start time index {} is after end time index {}",
+            start_idx, end_idx
+        ));
+    }
+
+    Ok(())
+}
+
 /// Find events (changes) of a signal within a time range.
 ///
 /// # Arguments
@@ -254,6 +279,8 @@ pub fn find_signal_events(
 ) -> Result<Vec<String>, String> {
     let time_table = waveform.time_table();
     let timescale = waveform.hierarchy().timescale();
+
+    validate_time_range(time_table.len(), start_idx, end_idx)?;
 
     let signal = waveform
         .get_signal(signal_ref)

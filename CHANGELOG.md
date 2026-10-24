@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   print general or per-command help; `--version`/`-V` prints the version
 
 ### Fixed
+- `find_conditional_events` panicked when `start_time_index` was past the end of the waveform;
+  time ranges are now validated for both `find_signal_events` and `find_conditional_events`, and
+  an inverted range (`start > end`) is reported instead of silently returning nothing
 - CLI numeric and boolean options (`--limit`, `--start`, `--end`, `--time-index`,
   `--time-indices`, `--recursive`) now reject invalid values instead of silently falling back to
   a default (an invalid `--limit` used to mean "unlimited")

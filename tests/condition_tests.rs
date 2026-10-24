@@ -1197,3 +1197,41 @@ b1010 !\n\
         "Should find 0 events where (~data & data) is zero"
     );
 }
+
+#[test]
+fn test_find_conditional_events_validates_time_range() {
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 1 ! clk $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+0!\n\
+#10\n\
+1!";
+
+    let mut temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+    std::io::Write::write(&mut temp_file, vcd_content.as_bytes()).expect("Failed to write VCD");
+    std::io::Write::flush(&mut temp_file).expect("Failed to flush");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+
+    // A start index past the end used to panic while slicing the time table.
+    let error = find_conditional_events(&mut waveform, "top.clk", 1000, 1000, -1)
+        .expect_err("out of range start should be reported");
+    assert!(
+        error.contains("start time index 1000 out of range"),
+        "unexpected error: {error}"
+    );
+
+    // A reversed range is rejected too.
+    let error = find_conditional_events(&mut waveform, "top.clk", 1, 0, -1)
+        .expect_err("reversed range should be reported");
+    assert!(
+        error.contains("is after end time index"),
+        "unexpected error: {error}"
+    );
+}

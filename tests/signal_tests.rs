@@ -176,3 +176,42 @@ $enddefinitions $end\n\
         "Should find events in specified range"
     );
 }
+
+#[test]
+fn test_find_signal_events_validates_time_range() {
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module top $end\n\
+$var wire 1 ! clk $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+0!\n\
+#10\n\
+1!";
+
+    let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    write!(temp_file, "{}", vcd_content).expect("Failed to write VCD content");
+    temp_file.flush().expect("Failed to flush");
+
+    let mut waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+    let signal_ref =
+        find_signal_by_path(waveform.hierarchy(), "top.clk").expect("Should find 'top.clk'");
+    waveform.load_signals(&[signal_ref]);
+
+    let error = find_signal_events(&waveform, signal_ref, 99, 99, -1)
+        .expect_err("out of range start should be reported");
+    assert!(
+        error.contains("start time index 99 out of range (max: 1)"),
+        "unexpected error: {error}"
+    );
+
+    let error = find_signal_events(&waveform, signal_ref, 1, 0, -1)
+        .expect_err("reversed range should be reported");
+    assert!(
+        error.contains("is after end time index"),
+        "unexpected error: {error}"
+    );
+}
