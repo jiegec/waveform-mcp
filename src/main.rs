@@ -102,7 +102,9 @@ impl PatternArg {
 }
 
 fn default_recursive() -> Option<bool> {
-    Some(false)
+    // `list_signals` mirrors the CLI: nested designs are the common case, so include
+    // sub-hierarchies unless the caller explicitly asks for the top level only.
+    Some(true)
 }
 
 fn default_list_signals_limit() -> Option<isize> {
@@ -252,7 +254,7 @@ impl WaveformHandler {
     }
 
     #[tool(
-        description = "List all signals in an open waveform. Use waveform_id from open_waveform. Optional: pattern (string or array, matched against the full signal path; multiple patterns are OR-ed) with match_mode 'substring' (case-insensitive, default), 'glob' (case-insensitive, e.g. '*bank*') or 'regex' (case-insensitive by default, use '(?-i)' to opt out); hierarchy_prefix (e.g., 'top.module', AND-ed with the patterns), recursive (default: false), and limit."
+        description = "List all signals in an open waveform. Use waveform_id from open_waveform. Optional: pattern (string or array, matched against the full signal path; multiple patterns are OR-ed) with match_mode 'substring' (case-insensitive, default), 'glob' (case-insensitive, e.g. '*bank*') or 'regex' (case-insensitive by default, use '(?-i)' to opt out); hierarchy_prefix (e.g., 'top.module', AND-ed with the patterns), recursive (default: true), and limit."
     )]
     async fn list_signals(
         &self,

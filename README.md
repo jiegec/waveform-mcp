@@ -93,7 +93,7 @@ The server provides 8 MCP tools:
        dots), `?` (one character), `[0-9]`, `{a,b}` — e.g. `*bank*`, `tb.*.clk`
      - `regex` - regular expression, case-insensitive by default (use `(?-i)` to opt out)
    - `hierarchy_prefix`: Optional prefix to filter signals by hierarchy path (AND-ed with `pattern`)
-   - `recursive`: Optional flag to include signals from sub-hierarchies (default: false)
+   - `recursive`: Optional flag to include signals from sub-hierarchies (default: true)
    - `limit`: Optional maximum number of signals to return (default: 100)
 
    Invalid glob or regex patterns are reported as errors rather than silently matching nothing,

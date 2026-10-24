@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   print general or per-command help; `--version`/`-V` prints the version
 
 ### Fixed
+- MCP `list_signals` defaulted to `recursive: false`, which returned no signals for the usual
+  nested design (`tb.dut.*`); it now defaults to `recursive: true` like the CLI, matching the
+  documented behaviour
 - `read_signal` now rejects passing both `time_index` and `time_indices`
   (`--time-index`/`--time-indices`) instead of silently ignoring one of them
 - `find_conditional_events` panicked when `start_time_index` was past the end of the waveform;
