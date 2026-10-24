@@ -209,7 +209,9 @@ impl WaveformHandler {
         Self { waveforms }
     }
 
-    #[tool(description = "Open a VCD or FST waveform file")]
+    #[tool(
+        description = "Open a VCD or FST waveform file. Use alias to name the waveform for later tools (default: the file name). A missing file reports which directory was searched and suggests similarly named files."
+    )]
     async fn open_waveform(
         &self,
         args: Parameters<OpenWaveformArgs>,
@@ -250,7 +252,7 @@ impl WaveformHandler {
     }
 
     #[tool(
-        description = "List all signals in an open waveform. Use waveform_id from open_waveform. Optional: pattern (string or array, matched against the full signal path; multiple patterns are OR-ed) with match_mode 'substring' (case-insensitive, default), 'glob' (case-insensitive, e.g. '*bank*') or 'regex' (case-insensitive by default, use '(?-i)' to opt out); hierarchy_prefix (e.g., 'top.module', AND-ed with the patterns), recursive (default: true), and limit."
+        description = "List all signals in an open waveform. Use waveform_id from open_waveform. Optional: pattern (string or array, matched against the full signal path; multiple patterns are OR-ed) with match_mode 'substring' (case-insensitive, default), 'glob' (case-insensitive, e.g. '*bank*') or 'regex' (case-insensitive by default, use '(?-i)' to opt out); hierarchy_prefix (e.g., 'top.module', AND-ed with the patterns), recursive (default: false), and limit."
     )]
     async fn list_signals(
         &self,

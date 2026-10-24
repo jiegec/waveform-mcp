@@ -10,8 +10,10 @@ An MCP (Model Context Protocol) server for reading and analyzing VCD/FST wavefor
 - **lib.rs**: Library exports from submodules
 - **condition.rs/condition.lalrpop**: Parser for conditional expressions (LALRPOP grammar)
 - **formatting.rs**: Time and signal value formatting utilities
-- **hierarchy.rs**: Signal/scope lookup by hierarchical path
-- **signal.rs**: Signal reading, event finding, and metadata
+- **hierarchy.rs**: Signal/scope lookup by hierarchical path, plus "not found" messages
+- **matcher.rs**: Substring/glob/regex signal path matching (`globset` + `regex`)
+- **signal.rs**: Signal reading, event finding, metadata, and `list_signals` result formatting
+- **suggest.rs**: "did you mean" suggestions for unknown ids, paths and files (`strsim`)
 
 ## MCP Tools (8 total)
 
