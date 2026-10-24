@@ -5,7 +5,7 @@
 //! Commands:
 //!   open_waveform <file_path> [--alias <alias>]
 //!   close_waveform <waveform_id>
-//!   list_signals <waveform_id> [--pattern <pattern>] [--hierarchy <prefix>] [--recursive <true|false>] [--limit <n>]
+//!   list_signals <waveform_id> [--contains <p>] [--glob <p>] [--regex <p>] [--hierarchy <prefix>] [--recursive <true|false>] [--limit <n>]
 //!   read_hierarchy <waveform_id> [--scope <scope>] [--recursive <true|false>] [--limit <n>]
 //!   read_signal <waveform_id> <signal_path> [--time-index <idx> | --time-indices <idx1,idx2,...>]
 //!   get_signal_info <waveform_id> <signal_path>
@@ -15,8 +15,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use waveform_mcp::{
-    Command, find_conditional_events, find_signal_by_path, find_signal_events, get_signal_metadata,
-    list_signals, parse_args, read_hierarchy, read_signal_values,
+    Command, SignalMatcher, find_conditional_events, find_signal_by_path, find_signal_events,
+    get_signal_metadata, glob_hint, list_signals, parse_args, read_hierarchy, read_signal_values,
 };
 
 fn print_usage() {
@@ -34,9 +34,9 @@ fn print_usage() {
     println!("    Close a waveform and free its memory");
     println!();
     println!(
-        "  list_signals <waveform_id> [--pattern <pattern>] [--hierarchy <prefix>] [--recursive <true|false>] [--limit <n>]"
+        "  list_signals <waveform_id> [--contains <p>] [--glob <p>] [--regex <p>] [--hierarchy <prefix>] [--recursive <true|false>] [--limit <n>]"
     );
-    println!("    List signals matching optional pattern");
+    println!("    List signals matching optional path patterns (substring/glob/regex, OR-ed)");
     println!();
     println!(
         "  read_hierarchy <waveform_id> [--scope <scope>] [--recursive <true|false>] [--limit <n>]"
@@ -66,7 +66,7 @@ fn print_usage() {
     println!("Examples:");
     println!("  waveform-cli open_waveform test.vcd");
     println!(
-        "  waveform-cli open_waveform test.fst --alias mywave -- list_signals mywave --pattern clock"
+        "  waveform-cli open_waveform test.fst --alias mywave -- list_signals mywave --glob '*bank*'"
     );
     println!("  waveform-cli open_waveform test.vcd -- read_signal test top.clk --time-index 0");
     println!(
@@ -134,7 +134,7 @@ fn execute_command(store: &mut WaveformStore, cmd: &Command) -> Result<String, S
         }
         Command::ListSignals {
             waveform_id,
-            name_pattern,
+            patterns,
             hierarchy_prefix,
             recursive,
             limit,
@@ -144,19 +144,29 @@ fn execute_command(store: &mut WaveformStore, cmd: &Command) -> Result<String, S
                 .ok_or_else(|| format!("Waveform not found: {}", waveform_id))?;
 
             let hierarchy = waveform.hierarchy();
+            let specs: Vec<(String, waveform_mcp::MatchMode)> = patterns
+                .iter()
+                .map(|p| (p.pattern.clone(), p.mode))
+                .collect();
+            let matcher = SignalMatcher::new(&specs)
+                .map_err(|e| format!("Error compiling path pattern: {}", e))?;
+
             let signals = list_signals(
                 hierarchy,
-                name_pattern.as_deref(),
+                &matcher,
                 hierarchy_prefix.as_deref(),
                 *recursive,
                 *limit,
             );
 
-            Ok(format!(
-                "Found {} signals:\n{}",
-                signals.len(),
-                signals.join("\n")
-            ))
+            let mut output = format!("Found {} signals:\n{}", signals.len(), signals.join("\n"));
+            if signals.is_empty()
+                && let Some(hint) = glob_hint(&specs)
+            {
+                output.push_str(&format!("\n\n{}", hint));
+            }
+
+            Ok(output)
         }
         Command::ReadHierarchy {
             waveform_id,

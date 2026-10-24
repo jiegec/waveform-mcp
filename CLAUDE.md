@@ -17,7 +17,7 @@ An MCP (Model Context Protocol) server for reading and analyzing VCD/FST wavefor
 
 1. `open_waveform` - Open VCD/FST files, assign optional alias
 2. `close_waveform` - Close waveform and free memory
-3. `list_signals` - List signals with name_pattern, hierarchy_prefix filters
+3. `list_signals` - List signals with pattern (substring/glob/regex, OR-ed) and hierarchy_prefix filters
 4. `read_hierarchy` - Read hierarchy tree from an optional scope
 5. `read_signal` - Read values at time_index or time_indices
 6. `get_signal_info` - Get signal type, width, index range
@@ -27,6 +27,7 @@ An MCP (Model Context Protocol) server for reading and analyzing VCD/FST wavefor
 ## Key Dependencies
 
 - `wellen` - Wavefile parsing
+- `globset` / `regex` - glob and regex signal path matching (`src/matcher.rs`)
 - `rmcp` - MCP server framework
 - `tokio` - Async runtime
 - `lalrpop` - Condition parser grammar
@@ -57,7 +58,9 @@ A standalone CLI binary `waveform-cli` is available for direct command-line acce
 ```bash
 # Usage: waveform-cli <command> [args...] [-- <command2> ...]
 waveform-cli open_waveform test.vcd
-waveform-cli open_waveform test.vcd -- list_signals test.vcd --pattern clk
+waveform-cli open_waveform test.vcd -- list_signals test.vcd --contains clk
+waveform-cli open_waveform test.vcd -- list_signals test.vcd --glob '*bank*' --regex '^tb\.dut\..*$'
+
 
 # Chain multiple commands with -- separator
 waveform-cli open_waveform test.vcd -- read_signal test.vcd top.clk --time-index 0
@@ -66,7 +69,9 @@ waveform-cli open_waveform test.vcd -- read_signal test.vcd top.clk --time-index
 **CLI Commands:**
 - `open_waveform <path> [--alias <name>]` - Open waveform file
 - `close_waveform <id>` - Close waveform
-- `list_signals <id> [--pattern <p>] [--hierarchy <h>] [--recursive <bool>] [--limit <n>]`
+- `list_signals <id> [--contains <p>] [--glob <p>] [--regex <p>] [--hierarchy <h>] [--recursive <bool>] [--limit <n>]`
+  - `--contains`/`--pattern`/`-p` = substring (default), `--glob`/`-g` = glob, `--regex`/`-x` = regex
+  - the three flags are mutually exclusive (the flag selects the mode); repeat one flag to OR patterns
 - `read_hierarchy <id> [--scope <scope>] [--recursive <bool>] [--limit <n>]`
 - `read_signal <id> <signal> [--time-index <idx> | --time-indices <list>]`
 - `get_signal_info <id> <signal>`
@@ -89,4 +94,6 @@ cargo test
 - Waveform store uses `Arc<RwLock<HashMap<>>>` for shared state
 - Signal data must be loaded with `waveform.load_signals()` before reading
 - Time values formatted with actual timescale (ns, ps, etc.)
-- Condition parser grammar in `src/condition/condition.lalrpop`
+- Condition parser grammar in `src/condition.lalrpop`
+- Signal path patterns are compiled once into `SignalMatcher` (`src/matcher.rs`): substring
+  patterns are case-insensitive, globs go through `globset`, regexes through `regex::RegexSet`

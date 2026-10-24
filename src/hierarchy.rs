@@ -2,6 +2,8 @@
 
 use wellen;
 
+use super::matcher::SignalMatcher;
+
 struct HierarchyRenderer {
     lines: Vec<String>,
     limit: Option<usize>,
@@ -131,7 +133,7 @@ pub(super) fn collect_signals_from_scope(
     hierarchy: &wellen::Hierarchy,
     scope_ref: wellen::ScopeRef,
     recursive: bool,
-    name_pattern: Option<&str>,
+    matcher: &SignalMatcher,
 ) -> Vec<String> {
     let scope = &hierarchy[scope_ref];
 
@@ -148,13 +150,9 @@ pub(super) fn collect_signals_from_scope(
         let var = &hierarchy[var_ref];
         let path = var.full_name(hierarchy);
 
-        // Apply name pattern filter if provided
-        if let Some(pattern) = name_pattern {
-            let pattern_lower = pattern.to_lowercase();
-            let path_lower = path.to_lowercase();
-            if !path_lower.contains(&pattern_lower) {
-                continue;
-            }
+        // Apply the (already compiled) path patterns.
+        if !matcher.is_match(&path) {
+            continue;
         }
 
         signals.push(path);

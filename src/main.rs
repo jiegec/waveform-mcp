@@ -14,8 +14,8 @@ use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::prelude::*;
 use waveform_mcp::{
-    find_conditional_events, find_signal_by_path, find_signal_events, get_signal_metadata,
-    list_signals, read_hierarchy, read_signal_values,
+    MatchMode, SignalMatcher, find_conditional_events, find_signal_by_path, find_signal_events,
+    get_signal_metadata, glob_hint, list_signals, read_hierarchy, read_signal_values,
 };
 
 /// Command line arguments for the waveform MCP server
@@ -49,14 +49,36 @@ pub struct OpenWaveformArgs {
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ListSignalsArgs {
     pub waveform_id: String,
+    /// Pattern(s) matched against the full signal path (e.g. "tb.dut.abc_bank").
+    /// A single string or an array of strings; multiple patterns are OR-ed.
+    #[serde(default, alias = "name_pattern")]
+    pub pattern: Option<PatternArg>,
+    /// How `pattern` is interpreted: "substring" (default), "glob", or "regex".
     #[serde(default)]
-    pub name_pattern: Option<String>,
+    pub match_mode: Option<String>,
     #[serde(default)]
     pub hierarchy_prefix: Option<String>,
     #[serde(default = "default_recursive")]
     pub recursive: Option<bool>,
     #[serde(default = "default_list_signals_limit")]
     pub limit: Option<isize>,
+}
+
+/// Accept either a single pattern or a list of patterns.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum PatternArg {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl PatternArg {
+    fn into_vec(self) -> Vec<String> {
+        match self {
+            Self::One(pattern) => vec![pattern],
+            Self::Many(patterns) => patterns,
+        }
+    }
 }
 
 fn default_recursive() -> Option<bool> {
@@ -209,7 +231,7 @@ impl WaveformHandler {
     }
 
     #[tool(
-        description = "List all signals in an open waveform. Use waveform_id from open_waveform. Optional: filter by name_pattern (case-insensitive substring), hierarchy_prefix (e.g., 'top.module'), recursive (default: true), and limit."
+        description = "List all signals in an open waveform. Use waveform_id from open_waveform. Optional: pattern (string or array, matched against the full signal path; multiple patterns are OR-ed) with match_mode 'substring' (case-insensitive, default), 'glob' (case-insensitive, e.g. '*bank*') or 'regex' (case-insensitive by default, use '(?-i)' to opt out); hierarchy_prefix (e.g., 'top.module', AND-ed with the patterns), recursive (default: true), and limit."
     )]
     async fn list_signals(
         &self,
@@ -225,19 +247,39 @@ impl WaveformHandler {
         let hierarchy = waveform.hierarchy();
         let recursive = args.recursive.unwrap_or(true);
 
+        let mode = match args.match_mode.as_deref() {
+            Some(value) => {
+                MatchMode::parse(value).map_err(|e| McpError::invalid_params(e, None))?
+            }
+            None => MatchMode::default(),
+        };
+        let patterns: Vec<(String, MatchMode)> = args
+            .pattern
+            .clone()
+            .map(PatternArg::into_vec)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|pattern| (pattern, mode))
+            .collect();
+        let matcher =
+            SignalMatcher::new(&patterns).map_err(|e| McpError::invalid_params(e, None))?;
+
         let signals = list_signals(
             hierarchy,
-            args.name_pattern.as_deref(),
+            &matcher,
             args.hierarchy_prefix.as_deref(),
             recursive,
             args.limit,
         );
 
-        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
-            "Found {} signals:\n{}",
-            signals.len(),
-            signals.join("\n")
-        ))]))
+        let mut body = format!("Found {} signals:\n{}", signals.len(), signals.join("\n"));
+        if signals.is_empty()
+            && let Some(hint) = glob_hint(&patterns)
+        {
+            body.push_str(&format!("\n\n{}", hint));
+        }
+
+        Ok(CallToolResult::success(vec![ContentBlock::text(body)]))
     }
 
     #[tool(

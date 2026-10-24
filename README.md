@@ -83,10 +83,18 @@ The server provides 8 MCP tools:
 
 3. **list_signals** - List all signals in an open waveform
    - `waveform_id`: ID or alias of the waveform
-   - `name_pattern`: Optional substring to filter signals by name (case-insensitive)
-   - `hierarchy_prefix`: Optional prefix to filter signals by hierarchy path
+   - `pattern`: Optional pattern (a string or an array of strings) matched against the full
+     signal path, e.g. `tb.dut.abc_bank`. Multiple patterns are OR-ed
+   - `match_mode`: How `pattern` is interpreted (default: `substring`)
+     - `substring` - case-insensitive substring match (the pattern is a literal fragment)
+     - `glob` - case-insensitive glob over the whole path: `*` (any characters, including
+       dots), `?` (one character), `[0-9]`, `{a,b}` — e.g. `*bank*`, `tb.*.clk`
+     - `regex` - regular expression, case-insensitive by default (use `(?-i)` to opt out)
+   - `hierarchy_prefix`: Optional prefix to filter signals by hierarchy path (AND-ed with `pattern`)
    - `recursive`: Optional flag to include signals from sub-hierarchies (default: false)
    - `limit`: Optional maximum number of signals to return (default: 100)
+
+   Invalid glob or regex patterns are reported as errors rather than silently matching nothing.
 
    **Example response:**
    ```
@@ -203,7 +211,7 @@ In addition to the MCP server, a standalone CLI tool `waveform-cli` is available
 waveform-cli open_waveform /path/to/waveform.vcd
 
 # Chain multiple commands with --
-waveform-cli open_waveform test.vcd -- list_signals test.vcd --pattern clk
+waveform-cli open_waveform test.vcd -- list_signals test.vcd --contains clk
 
 # Full workflow example
 waveform-cli open_waveform test.vcd --alias mywave -- \\
@@ -216,7 +224,14 @@ waveform-cli open_waveform test.vcd --alias mywave -- \\
 
 - **open_waveform** `<file_path>` [--alias `<name>`] - Open waveform file
 - **close_waveform** `<id>` - Close waveform
-- **list_signals** `<id>` [--pattern `<p>`] [--hierarchy `<h>`] [--recursive `<bool>`] [--limit `<n>`]
+- **list_signals** `<id>` [--contains `<p>`] [--glob `<p>`] [--regex `<p>`] [--hierarchy `<h>`] [--recursive `<bool>`] [--limit `<n>`]
+  - `--contains` / `-p` / `--pattern`: case-insensitive substring match (default)
+  - `--glob` / `-g`: case-insensitive glob over the whole path, e.g. `--glob '*bank*'`
+  - `--regex` / `-x`: regular expression, case-insensitive by default
+  - The three flags are mutually exclusive: the flag you use selects the match mode, and it
+    applies to the whole command. Repeat the same flag to OR several patterns together, e.g.
+    `--glob '*bank*' --glob '*ram*'`
+  - `--pattern` is an alias of `--contains`
 - **read_hierarchy** `<id>` [--scope `<scope>`] [--recursive `<bool>`] [--limit `<n>`]
 - **read_signal** `<id>` `<signal>` [--time-index `<idx>` | --time-indices `<list>`]
 - **get_signal_info** `<id>` `<signal>` - Get signal metadata

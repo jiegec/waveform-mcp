@@ -4,14 +4,16 @@ use wellen;
 
 use super::{
     formatting::format_signal_value, formatting::format_time,
-    hierarchy::collect_signals_from_scope, hierarchy::find_scope_by_path,
+    hierarchy::collect_signals_from_scope, hierarchy::find_scope_by_path, matcher::SignalMatcher,
 };
 
 /// List signals in a waveform hierarchy with optional filtering.
 ///
 /// # Arguments
 /// * `hierarchy` - The waveform hierarchy to search
-/// * `name_pattern` - Optional case-insensitive substring filter for signal names
+/// * `matcher` - Compiled path patterns. Multiple patterns are OR-ed, and an empty
+///   matcher matches every signal. Patterns are matched against the full signal path
+///   (e.g. `tb.dut.abc_bank`).
 /// * `hierarchy_prefix` - Optional hierarchy path prefix to filter signals (must match a scope)
 /// * `recursive` - If true, list all signals recursively; if false, only list signals at specified level
 /// * `limit` - Optional maximum number of signals to return. Use -1 for unlimited.
@@ -20,7 +22,7 @@ use super::{
 /// A vector of signal paths.
 pub fn list_signals(
     hierarchy: &wellen::Hierarchy,
-    name_pattern: Option<&str>,
+    matcher: &SignalMatcher,
     hierarchy_prefix: Option<&str>,
     recursive: bool,
     limit: Option<isize>,
@@ -31,17 +33,14 @@ pub fn list_signals(
         // Find scope by path
         if let Some(scope_ref) = find_scope_by_path(hierarchy, prefix) {
             // Collect signals from this scope (and children if recursive)
-            signals = collect_signals_from_scope(hierarchy, scope_ref, recursive, name_pattern);
+            signals = collect_signals_from_scope(hierarchy, scope_ref, recursive, matcher);
         }
         // If scope not found, return empty signals
     } else {
         // No hierarchy prefix - start from top-level scopes
         for scope_ref in hierarchy.scopes() {
             signals.extend(collect_signals_from_scope(
-                hierarchy,
-                scope_ref,
-                recursive,
-                name_pattern,
+                hierarchy, scope_ref, recursive, matcher,
             ));
         }
     }

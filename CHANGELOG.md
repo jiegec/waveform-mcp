@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `list_signals` supports glob (`match_mode: "glob"`, CLI `--glob`) and regular expression
+  (`match_mode: "regex"`, CLI `--regex`) signal path matching
+- Multiple `list_signals` patterns of the same mode can be given at once; they are OR-ed together
+- A hint is printed when a substring pattern contains glob wildcards but matched nothing
+
+### Changed
+- The `list_signals` MCP parameter `name_pattern` was renamed to `pattern` (`name_pattern`
+  is still accepted as an alias)
+- `list_signals` now reports invalid glob/regex patterns as errors instead of returning nothing
+- CLI `list_signals`: the match mode is selected by `--contains` / `--glob` / `--regex`
+  (mutually exclusive) instead of a separate `--match-mode` flag
+
 ## [0.6.0] - 2026-08-01
 
 ### Changed

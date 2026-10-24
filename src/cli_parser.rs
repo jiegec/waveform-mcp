@@ -1,5 +1,14 @@
 //! Command-line parsing for waveform-cli
 
+use crate::matcher::MatchMode;
+
+/// A signal path pattern together with the way it should be matched.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SignalPattern {
+    pub pattern: String,
+    pub mode: MatchMode,
+}
+
 /// A parsed CLI command
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
@@ -12,7 +21,7 @@ pub enum Command {
     },
     ListSignals {
         waveform_id: String,
-        name_pattern: Option<String>,
+        patterns: Vec<SignalPattern>,
         hierarchy_prefix: Option<String>,
         recursive: bool,
         limit: Option<isize>,
@@ -57,22 +66,24 @@ pub fn parse_args(args: Vec<String>) -> Result<Vec<Command>, String> {
         return Err("No arguments provided".to_string());
     }
 
-    // Split args by "--" separator
-    let mut command_groups: Vec<Vec<String>> = vec![vec![]];
-    for arg in args {
-        if arg == "--" {
-            command_groups.push(vec![]);
-        } else {
-            command_groups.last_mut().unwrap().push(arg);
-        }
-    }
-
-    // Parse each command group
-    command_groups
+    split_command_groups(&args)
         .into_iter()
-        .filter(|g| !g.is_empty())
         .map(parse_command)
         .collect()
+}
+
+/// Split the raw arguments into per-command groups using "--" as the separator.
+pub fn split_command_groups(args: &[String]) -> Vec<Vec<String>> {
+    let mut groups: Vec<Vec<String>> = vec![vec![]];
+    for arg in args {
+        if arg == "--" {
+            groups.push(vec![]);
+        } else {
+            groups.last_mut().unwrap().push(arg.clone());
+        }
+    }
+    groups.retain(|group| !group.is_empty());
+    groups
 }
 
 /// Parse a single command from a group of arguments
@@ -140,7 +151,9 @@ fn parse_list_signals(args: &[String]) -> Result<Command, String> {
     }
 
     let waveform_id = args[0].clone();
-    let mut name_pattern = None;
+    let mut patterns: Vec<SignalPattern> = Vec::new();
+    // The match mode is implied by the flag used, and only one mode is allowed per command.
+    let mut selected_mode: Option<MatchMode> = None;
     let mut hierarchy_prefix = None;
     let mut recursive = true;
     let mut limit = Some(100isize);
@@ -148,13 +161,34 @@ fn parse_list_signals(args: &[String]) -> Result<Command, String> {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--pattern" | "-p" => {
+            "--contains" | "--pattern" | "-p" => {
+                let flag = args[i].clone();
                 i += 1;
-                if i < args.len() {
-                    name_pattern = Some(args[i].clone());
-                } else {
-                    return Err("--pattern requires a value".to_string());
-                }
+                let value = args
+                    .get(i)
+                    .ok_or_else(|| format!("{} requires a value", flag))?;
+                add_pattern(
+                    &mut patterns,
+                    &mut selected_mode,
+                    value,
+                    MatchMode::Substring,
+                )?;
+            }
+            "--glob" | "-g" => {
+                let flag = args[i].clone();
+                i += 1;
+                let value = args
+                    .get(i)
+                    .ok_or_else(|| format!("{} requires a value", flag))?;
+                add_pattern(&mut patterns, &mut selected_mode, value, MatchMode::Glob)?;
+            }
+            "--regex" | "-x" => {
+                let flag = args[i].clone();
+                i += 1;
+                let value = args
+                    .get(i)
+                    .ok_or_else(|| format!("{} requires a value", flag))?;
+                add_pattern(&mut patterns, &mut selected_mode, value, MatchMode::Regex)?;
             }
             "--hierarchy" | "-h" => {
                 i += 1;
@@ -187,11 +221,48 @@ fn parse_list_signals(args: &[String]) -> Result<Command, String> {
 
     Ok(Command::ListSignals {
         waveform_id,
-        name_pattern,
+        patterns,
         hierarchy_prefix,
         recursive,
         limit,
     })
+}
+
+/// Record a pattern, rejecting mixtures of match modes.
+///
+/// The match mode is selected by the flag used (`--contains`, `--glob`, or `--regex`) and only
+/// one mode may be used per command; multiple patterns of the same mode are OR-ed.
+fn add_pattern(
+    patterns: &mut Vec<SignalPattern>,
+    selected_mode: &mut Option<MatchMode>,
+    pattern: &str,
+    mode: MatchMode,
+) -> Result<(), String> {
+    if let Some(current) = *selected_mode
+        && current != mode
+    {
+        return Err(format!(
+            "{} cannot be combined with {}; use only one match mode per list_signals",
+            mode_flag(mode),
+            mode_flag(current)
+        ));
+    }
+
+    *selected_mode = Some(mode);
+    patterns.push(SignalPattern {
+        pattern: pattern.to_string(),
+        mode,
+    });
+    Ok(())
+}
+
+/// The CLI flag that selects `mode`.
+fn mode_flag(mode: MatchMode) -> &'static str {
+    match mode {
+        MatchMode::Substring => "--contains",
+        MatchMode::Glob => "--glob",
+        MatchMode::Regex => "--regex",
+    }
 }
 
 fn parse_read_hierarchy(args: &[String]) -> Result<Command, String> {
@@ -506,7 +577,7 @@ mod tests {
             commands[0],
             Command::ListSignals {
                 waveform_id: "test.vcd".to_string(),
-                name_pattern: None,
+                patterns: vec![],
                 hierarchy_prefix: None,
                 recursive: true,
                 limit: Some(100),
@@ -529,7 +600,10 @@ mod tests {
             commands[0].clone(),
             Command::ListSignals {
                 waveform_id: "test.vcd".to_string(),
-                name_pattern: Some("clk".to_string()),
+                patterns: vec![SignalPattern {
+                    pattern: "clk".to_string(),
+                    mode: MatchMode::Substring,
+                }],
                 hierarchy_prefix: None,
                 recursive: true,
                 limit: Some(100),
@@ -558,12 +632,98 @@ mod tests {
             commands[0].clone(),
             Command::ListSignals {
                 waveform_id: "test.vcd".to_string(),
-                name_pattern: Some("data".to_string()),
+                patterns: vec![SignalPattern {
+                    pattern: "data".to_string(),
+                    mode: MatchMode::Substring,
+                }],
                 hierarchy_prefix: Some("top".to_string()),
                 recursive: false,
                 limit: Some(50),
             }
         );
+    }
+
+    #[test]
+    fn test_parse_list_signals_with_repeated_glob_patterns() {
+        let args = vec![
+            "list_signals".to_string(),
+            "test.vcd".to_string(),
+            "--glob".to_string(),
+            "*bank*".to_string(),
+            "-g".to_string(),
+            "*ram*".to_string(),
+        ];
+        let result = parse_args(args);
+        assert!(result.is_ok());
+        let commands = result.unwrap();
+        assert_eq!(
+            commands[0].clone(),
+            Command::ListSignals {
+                waveform_id: "test.vcd".to_string(),
+                patterns: vec![
+                    SignalPattern {
+                        pattern: "*bank*".to_string(),
+                        mode: MatchMode::Glob,
+                    },
+                    SignalPattern {
+                        pattern: "*ram*".to_string(),
+                        mode: MatchMode::Glob,
+                    },
+                ],
+                hierarchy_prefix: None,
+                recursive: true,
+                limit: Some(100),
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_list_signals_with_regex_patterns() {
+        let args = vec![
+            "list_signals".to_string(),
+            "test.vcd".to_string(),
+            "--regex".to_string(),
+            "^tb\\.dut\\.ram\\d+$".to_string(),
+            "-p".to_string(),
+            "clk".to_string(),
+        ];
+        let result = parse_args(args);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            "--contains cannot be combined with --regex; use only one match mode per list_signals"
+        );
+    }
+
+    #[test]
+    fn test_parse_list_signals_rejects_mixed_match_modes() {
+        let args = vec![
+            "list_signals".to_string(),
+            "test.vcd".to_string(),
+            "--glob".to_string(),
+            "*bank*".to_string(),
+            "--regex".to_string(),
+            "^tb\\.dut\\.ram\\d+$".to_string(),
+        ];
+        let result = parse_args(args);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            "--regex cannot be combined with --glob; use only one match mode per list_signals"
+        );
+    }
+
+    #[test]
+    fn test_split_command_groups() {
+        let args: Vec<String> = vec!["a", "--", "b", "c", "--", "--", "d"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let groups = split_command_groups(&args);
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[0], vec!["a".to_string()]);
+        assert_eq!(groups[1], vec!["b".to_string(), "c".to_string()]);
+        assert_eq!(groups[2], vec!["d".to_string()]);
     }
 
     #[test]
@@ -759,7 +919,7 @@ mod tests {
             commands[1].clone(),
             Command::ListSignals {
                 waveform_id: "test.vcd".to_string(),
-                name_pattern: None,
+                patterns: vec![],
                 hierarchy_prefix: None,
                 recursive: true,
                 limit: Some(100),

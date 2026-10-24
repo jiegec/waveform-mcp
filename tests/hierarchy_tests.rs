@@ -6,6 +6,7 @@ use waveform_mcp::find_scope_by_path;
 use waveform_mcp::find_signal_by_path;
 use waveform_mcp::list_signals;
 use waveform_mcp::read_hierarchy;
+use waveform_mcp::{MatchMode, SignalMatcher};
 
 #[test]
 fn test_signal_full_name() {
@@ -305,12 +306,15 @@ $enddefinitions $end\n\
     let waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
     let hierarchy = waveform.hierarchy();
 
+    let all = SignalMatcher::all();
+
     // Test listing all signals (recursive)
-    let signals = list_signals(hierarchy, None, None, true, None);
+    let signals = list_signals(hierarchy, &all, None, true, None);
     assert_eq!(signals.len(), 3, "Should find 3 signals");
 
     // Test filtering by name pattern
-    let clk_signals = list_signals(hierarchy, Some("clk"), None, true, None);
+    let clk = SignalMatcher::single("clk", MatchMode::Substring).expect("valid pattern");
+    let clk_signals = list_signals(hierarchy, &clk, None, true, None);
     assert_eq!(clk_signals.len(), 1, "Should find 1 signal matching 'clk'");
     assert!(
         clk_signals[0].contains("clk"),
@@ -318,15 +322,15 @@ $enddefinitions $end\n\
     );
 
     // Test filtering by hierarchy prefix
-    let top_signals = list_signals(hierarchy, None, Some("top"), true, None);
+    let top_signals = list_signals(hierarchy, &all, Some("top"), true, None);
     assert_eq!(top_signals.len(), 3, "Should find 3 signals under 'top'");
 
     // Test limit
-    let limited_signals = list_signals(hierarchy, None, None, true, Some(2));
+    let limited_signals = list_signals(hierarchy, &all, None, true, Some(2));
     assert_eq!(limited_signals.len(), 2, "Should limit to 2 signals");
 
     // Test unlimited limit (-1)
-    let unlimited_signals = list_signals(hierarchy, None, None, true, Some(-1));
+    let unlimited_signals = list_signals(hierarchy, &all, None, true, Some(-1));
     assert_eq!(
         unlimited_signals.len(),
         3,
@@ -511,4 +515,60 @@ $enddefinitions $end\n\
         .expect("Should read hierarchy for 'top'");
 
     assert_eq!(lines, vec!["top", "  submodule1", "    inner",]);
+}
+
+#[test]
+fn test_list_signals_glob_regex_and_or() {
+    let vcd_content = "\
+$date 2024-01-01 $end\n\
+$version Test VCD file $end\n\
+$timescale 1ns $end\n\
+$scope module tb $end\n\
+$scope module dut $end\n\
+$var wire 1 ! abc_bank $end\n\
+$var wire 1 \" abc_ram $end\n\
+$var wire 1 # clk $end\n\
+$upscope $end\n\
+$upscope $end\n\
+$enddefinitions $end\n\
+#0\n\
+0!\n\
+0\"\n\
+0#";
+
+    let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    write!(temp_file, "{}", vcd_content).expect("Failed to write VCD content");
+    temp_file.flush().expect("Failed to flush");
+
+    let waveform = wellen::simple::read(temp_file.path()).expect("Failed to read VCD file");
+    let hierarchy = waveform.hierarchy();
+
+    // A glob with explicit wildcards matches the path suffix.
+    let glob = SignalMatcher::single("*bank*", MatchMode::Glob).expect("valid glob");
+    let signals = list_signals(hierarchy, &glob, None, true, None);
+    assert_eq!(signals, vec!["tb.dut.abc_bank".to_string()]);
+
+    // A glob without wildcards must match the whole path, not a substring.
+    let glob = SignalMatcher::single("bank", MatchMode::Glob).expect("valid glob");
+    assert!(list_signals(hierarchy, &glob, None, true, None).is_empty());
+
+    // A regex uses the same case-insensitive default.
+    let regex = SignalMatcher::single(r"(?i)^tb\.dut\.abc_(bank|ram)$", MatchMode::Regex).unwrap();
+    assert_eq!(
+        list_signals(hierarchy, &regex, None, true, None).len(),
+        2,
+        "regex should match both bank and ram"
+    );
+
+    // Multiple patterns are OR-ed across modes.
+    let patterns = vec![
+        ("*_bank".to_string(), MatchMode::Glob),
+        ("(?-i)^tb\\.dut\\.clk$".to_string(), MatchMode::Regex),
+    ];
+    let matcher = SignalMatcher::new(&patterns).expect("valid patterns");
+    let signals = list_signals(hierarchy, &matcher, None, true, None);
+    assert_eq!(
+        signals,
+        vec!["tb.dut.abc_bank".to_string(), "tb.dut.clk".to_string()]
+    );
 }
