@@ -1,6 +1,50 @@
 //! Command-line parsing for waveform-cli
 
 use crate::matcher::MatchMode;
+use crate::suggest::did_you_mean;
+
+/// Names of every CLI command, in help order.
+pub const COMMAND_NAMES: [&str; 8] = [
+    "open_waveform",
+    "close_waveform",
+    "list_signals",
+    "read_hierarchy",
+    "read_signal",
+    "get_signal_info",
+    "find_signal_events",
+    "find_conditional_events",
+];
+
+/// Message for an unknown command, suggesting the closest command name.
+pub fn unknown_command_message(name: &str) -> String {
+    let candidates: Vec<String> = COMMAND_NAMES.iter().map(|name| name.to_string()).collect();
+    let suggestions = did_you_mean(name, &candidates);
+
+    if suggestions.len() == 1 {
+        return format!(
+            "Unknown command '{}'. Did you mean '{}'?",
+            name, suggestions[0]
+        );
+    }
+
+    if suggestions.len() > 1 {
+        let quoted: Vec<String> = suggestions
+            .iter()
+            .map(|suggestion| format!("'{}'", suggestion))
+            .collect();
+        return format!(
+            "Unknown command '{}'. Did you mean one of: {}?",
+            name,
+            quoted.join(", ")
+        );
+    }
+
+    format!(
+        "Unknown command '{}'. Available commands: {}. Run 'waveform-cli --help' for usage.",
+        name,
+        COMMAND_NAMES.join(", ")
+    )
+}
 
 /// A signal path pattern together with the way it should be matched.
 #[derive(Debug, Clone, PartialEq)]
@@ -336,7 +380,7 @@ fn parse_command(group: Vec<String>) -> Result<Command, String> {
         "get_signal_info" => parse_get_signal_info(&cmd_args),
         "find_signal_events" => parse_find_signal_events(&cmd_args),
         "find_conditional_events" => parse_find_conditional_events(&cmd_args),
-        _ => Err(format!("Unknown command '{}'", cmd_name)),
+        _ => Err(unknown_command_message(cmd_name)),
     }
 }
 
@@ -1360,7 +1404,32 @@ mod tests {
         let args = vec!["unknown_command".to_string(), "arg1".to_string()];
         let result = parse_args(args);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Unknown command 'unknown_command'");
+        let error = result.unwrap_err();
+        assert!(
+            error.contains("Unknown command 'unknown_command'"),
+            "unexpected error: {error}"
+        );
+        assert!(
+            error.contains("Available commands"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn test_unknown_command_suggests_similar_names() {
+        let args: Vec<String> = vec!["list_signal", "wave"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert_eq!(
+            parse_args(args).unwrap_err(),
+            "Unknown command 'list_signal'. Did you mean 'list_signals'?"
+        );
+
+        assert_eq!(
+            unknown_command_message("open_wavefor"),
+            "Unknown command 'open_wavefor'. Did you mean 'open_waveform'?"
+        );
     }
 
     #[test]

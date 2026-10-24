@@ -19,7 +19,7 @@ use waveform_mcp::{
     find_scope_by_path, find_signal_by_path, find_signal_events, format_signal_query_result,
     get_signal_metadata, help_request, list_signals_detailed, not_found_message, parse_args,
     read_hierarchy, read_signal_values, scope_not_found_message, signal_not_found_message,
-    usage_text,
+    unknown_command_message, usage_text,
 };
 
 /// Print the help text for `command`, or the general usage text when `None`.
@@ -30,7 +30,7 @@ fn print_help(command: Option<&str>) {
         Some(name) => match command_help(name) {
             Some(text) => print!("{}", text),
             None => {
-                eprintln!("Unknown command '{}'\n", name);
+                eprintln!("{}\n", unknown_command_message(name));
                 eprint!("{}", usage_text());
                 std::process::exit(1);
             }

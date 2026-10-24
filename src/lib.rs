@@ -12,8 +12,8 @@ pub mod suggest;
 
 // Re-export public functions
 pub use cli_parser::{
-    Command, SignalPattern, command_help, help_request, parse_args, split_command_groups,
-    usage_text,
+    COMMAND_NAMES, Command, SignalPattern, command_help, help_request, parse_args,
+    split_command_groups, unknown_command_message, usage_text,
 };
 pub use condition::find_conditional_events;
 pub use formatting::{format_signal_value, format_time};
