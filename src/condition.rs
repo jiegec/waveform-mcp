@@ -230,6 +230,12 @@ fn evaluate_condition_with_width(
                             msb, lsb
                         ));
                     }
+                    if *msb >= full_width {
+                        return Err(format!(
+                            "Bit index {} out of range for signal {} (width {})",
+                            msb, path, full_width
+                        ));
+                    }
                     // Extract bits [msb:lsb] by:
                     // 1. Shift right by lsb positions
                     // 2. Create a mask with (msb - lsb + 1) bits set
@@ -337,59 +343,75 @@ fn literal_to_biguint(literal: &Literal) -> Result<(BigUint, u32), String> {
     }
 }
 
+/// Wrap a validation error from a fallible grammar action into a parser error.
+pub(super) fn user_error<'input>(
+    error: String,
+) -> lalrpop_util::ParseError<usize, lalrpop_util::lexer::Token<'input>, String> {
+    lalrpop_util::ParseError::User { error }
+}
+
 /// Parse a binary literal (e.g., "4'b0101") from the condition grammar.
 ///
 /// This function is called by the lalrpop-generated parser.
-pub(super) fn parse_binary_literal(s: &str) -> Literal {
-    let lower = s.to_lowercase();
-    let parts: Vec<&str> = lower.split('\'').collect();
-    if parts.len() != 2 {
-        panic!("Invalid binary literal: {}", s);
-    }
+pub(super) fn parse_binary_literal(s: &str) -> Result<Literal, String> {
+    let (width, digits) = split_literal(s, "binary")?;
 
-    let width: u32 = parts[0].parse().expect("Invalid bit width");
-    let value_str = parts[1].trim_start_matches('b').replace('_', "");
-    let mut bits = Vec::new();
-    for c in value_str.chars() {
+    let mut bits = Vec::with_capacity(digits.len());
+    for c in digits.chars() {
         match c {
             '0' => bits.push(false),
             '1' => bits.push(true),
-            _ => panic!("Invalid binary digit: {}", c),
+            other => return Err(format!("invalid binary digit '{}' in '{}'", other, s)),
         }
     }
-    Literal::Binary(bits, width)
+
+    Ok(Literal::Binary(bits, width))
 }
 
 /// Parse a decimal literal (e.g., "3'd2") from the condition grammar.
 ///
 /// This function is called by the lalrpop-generated parser.
-pub(super) fn parse_decimal_literal(s: &str) -> Literal {
-    let lower = s.to_lowercase();
-    let parts: Vec<&str> = lower.split('\'').collect();
-    if parts.len() != 2 {
-        panic!("Invalid decimal literal: {}", s);
-    }
+pub(super) fn parse_decimal_literal(s: &str) -> Result<Literal, String> {
+    let (width, digits) = split_literal(s, "decimal")?;
 
-    let width: u32 = parts[0].parse().expect("Invalid bit width");
-    let value_str = parts[1].trim_start_matches('d').replace('_', "");
-    let value: u64 = value_str.parse().expect("Invalid decimal value");
-    Literal::Decimal(value, width)
+    let value: u64 = digits
+        .parse()
+        .map_err(|_| format!("decimal literal '{}' does not fit in 64 bits", s))?;
+
+    Ok(Literal::Decimal(value, width))
 }
 
 /// Parse a hex literal (e.g., "5'h1A") from the condition grammar.
 ///
 /// This function is called by the lalrpop-generated parser.
-pub(super) fn parse_hex_literal(s: &str) -> Literal {
-    let lower = s.to_lowercase();
-    let parts: Vec<&str> = lower.split('\'').collect();
-    if parts.len() != 2 {
-        panic!("Invalid hex literal: {}", s);
-    }
+pub(super) fn parse_hex_literal(s: &str) -> Result<Literal, String> {
+    let (width, digits) = split_literal(s, "hexadecimal")?;
 
-    let width: u32 = parts[0].parse().expect("Invalid bit width");
-    let value_str = parts[1].trim_start_matches('h').replace('_', "");
-    let value = u64::from_str_radix(&value_str, 16).expect("Invalid hex value");
-    Literal::Hexadecimal(value, width)
+    let value = u64::from_str_radix(&digits, 16)
+        .map_err(|_| format!("hexadecimal literal '{}' does not fit in 64 bits", s))?;
+
+    Ok(Literal::Hexadecimal(value, width))
+}
+
+/// Split a Verilog literal such as `4'b0101` into its width and (lowercased) digits.
+fn split_literal(s: &str, kind: &str) -> Result<(u32, String), String> {
+    let lower = s.to_lowercase();
+    let (width, digits) = lower
+        .split_once('\'')
+        .ok_or_else(|| format!("invalid {} literal '{}'", kind, s))?;
+
+    let width: u32 = width
+        .parse()
+        .map_err(|_| format!("bit width in '{}' is too large", s))?;
+
+    // Drop the base character (`b`, `d` or `h`) and the digit separators.
+    let digits = digits
+        .chars()
+        .skip(1)
+        .filter(|c| *c != '_')
+        .collect::<String>();
+
+    Ok((width, digits))
 }
 
 /// Find events where a condition is satisfied.

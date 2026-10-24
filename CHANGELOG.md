@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   print general or per-command help; `--version`/`-V` prints the version
 
 ### Fixed
+- `find_conditional_events` no longer panics on huge literals (`4294967296'b1`,
+  `99999999999999999999999'd1`) or on huge bit ranges (`signal[4294967295:0]`); these are
+  reported as errors, and a bit index beyond the signal width names the signal and its width
 - MCP `list_signals` defaulted to `recursive: false`, which returned no signals for the usual
   nested design (`tb.dut.*`); it now defaults to `recursive: true` like the CLI, matching the
   documented behaviour
