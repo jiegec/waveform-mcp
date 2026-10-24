@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A hint is printed when a substring pattern contains glob wildcards but matched nothing
 
 ### Added
+- Not-found errors now list the available names, and suggest the closest match for typos
+  (waveform ids today; signals and scopes follow)
 - `waveform-cli --help`/`-h`, `waveform-cli help <command>` and `waveform-cli <command> --help`
   print general or per-command help; `--version`/`-V` prints the version
 

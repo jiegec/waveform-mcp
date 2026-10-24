@@ -15,7 +15,8 @@ use tokio_util::sync::CancellationToken;
 use tracing_subscriber::prelude::*;
 use waveform_mcp::{
     MatchMode, SignalMatcher, find_conditional_events, find_signal_by_path, find_signal_events,
-    get_signal_metadata, glob_hint, list_signals, read_hierarchy, read_signal_values,
+    get_signal_metadata, glob_hint, list_signals, not_found_message, read_hierarchy,
+    read_signal_values,
 };
 
 /// Command line arguments for the waveform MCP server
@@ -33,6 +34,24 @@ struct Args {
 
 // Waveform store - using RwLock for interior mutability
 type WaveformStore = Arc<RwLock<HashMap<String, wellen::simple::Waveform>>>;
+
+/// "Not found" message that lists the waveforms that are actually open, or suggests the
+/// closest id when the requested one is a typo.
+fn waveform_not_found_message(
+    waveforms: &HashMap<String, wellen::simple::Waveform>,
+    waveform_id: &str,
+) -> String {
+    let available: Vec<String> = waveforms.keys().cloned().collect();
+    not_found_message("waveform", waveform_id, &available)
+}
+
+/// Invalid-parameters error for an unknown waveform id.
+fn waveform_not_found(
+    waveforms: &HashMap<String, wellen::simple::Waveform>,
+    waveform_id: &str,
+) -> McpError {
+    McpError::invalid_params(waveform_not_found_message(waveforms, waveform_id), None)
+}
 
 #[derive(Debug, Clone)]
 pub struct WaveformHandler {
@@ -240,9 +259,9 @@ impl WaveformHandler {
         let args = &args.0;
         let waveforms = self.waveforms.read().await;
 
-        let waveform = waveforms.get(&args.waveform_id).ok_or_else(|| {
-            McpError::invalid_params(format!("Waveform not found: {}", args.waveform_id), None)
-        })?;
+        let waveform = waveforms
+            .get(&args.waveform_id)
+            .ok_or_else(|| waveform_not_found(&waveforms, &args.waveform_id))?;
 
         let hierarchy = waveform.hierarchy();
         let recursive = args.recursive.unwrap_or(true);
@@ -292,9 +311,9 @@ impl WaveformHandler {
         let args = &args.0;
         let waveforms = self.waveforms.read().await;
 
-        let waveform = waveforms.get(&args.waveform_id).ok_or_else(|| {
-            McpError::invalid_params(format!("Waveform not found: {}", args.waveform_id), None)
-        })?;
+        let waveform = waveforms
+            .get(&args.waveform_id)
+            .ok_or_else(|| waveform_not_found(&waveforms, &args.waveform_id))?;
 
         let hierarchy = waveform.hierarchy();
         let lines = read_hierarchy(
@@ -331,9 +350,12 @@ impl WaveformHandler {
         let args = &args.0;
         let mut waveforms = self.waveforms.write().await;
 
-        let waveform = waveforms.get_mut(&args.waveform_id).ok_or_else(|| {
-            McpError::invalid_params(format!("Waveform not found: {}", args.waveform_id), None)
-        })?;
+        if !waveforms.contains_key(&args.waveform_id) {
+            return Err(waveform_not_found(&waveforms, &args.waveform_id));
+        }
+        let waveform = waveforms
+            .get_mut(&args.waveform_id)
+            .expect("waveform existence was checked above");
 
         let hierarchy = waveform.hierarchy();
         let signal_ref = find_signal_by_path(hierarchy, &args.signal_path).ok_or_else(|| {
@@ -372,9 +394,9 @@ impl WaveformHandler {
         let args = &args.0;
         let waveforms = self.waveforms.read().await;
 
-        let waveform = waveforms.get(&args.waveform_id).ok_or_else(|| {
-            McpError::invalid_params(format!("Waveform not found: {}", args.waveform_id), None)
-        })?;
+        let waveform = waveforms
+            .get(&args.waveform_id)
+            .ok_or_else(|| waveform_not_found(&waveforms, &args.waveform_id))?;
 
         let hierarchy = waveform.hierarchy();
 
@@ -394,9 +416,12 @@ impl WaveformHandler {
         let args = &args.0;
         let mut waveforms = self.waveforms.write().await;
 
-        let waveform = waveforms.get_mut(&args.waveform_id).ok_or_else(|| {
-            McpError::invalid_params(format!("Waveform not found: {}", args.waveform_id), None)
-        })?;
+        if !waveforms.contains_key(&args.waveform_id) {
+            return Err(waveform_not_found(&waveforms, &args.waveform_id));
+        }
+        let waveform = waveforms
+            .get_mut(&args.waveform_id)
+            .expect("waveform existence was checked above");
 
         let hierarchy = waveform.hierarchy();
         let signal_ref = find_signal_by_path(hierarchy, &args.signal_path).ok_or_else(|| {
@@ -436,9 +461,12 @@ impl WaveformHandler {
         let args = &args.0;
         let mut waveforms = self.waveforms.write().await;
 
-        let waveform = waveforms.get_mut(&args.waveform_id).ok_or_else(|| {
-            McpError::invalid_params(format!("Waveform not found: {}", args.waveform_id), None)
-        })?;
+        if !waveforms.contains_key(&args.waveform_id) {
+            return Err(waveform_not_found(&waveforms, &args.waveform_id));
+        }
+        let waveform = waveforms
+            .get_mut(&args.waveform_id)
+            .expect("waveform existence was checked above");
 
         let time_table = waveform.time_table();
         let start_idx = args.start_time_index.unwrap_or(0);
@@ -473,10 +501,9 @@ impl WaveformHandler {
                 "Waveform '{}' closed successfully",
                 args.waveform_id
             ))])),
-            None => Ok(CallToolResult::error(vec![ContentBlock::text(format!(
-                "Waveform not found: {}",
-                args.waveform_id
-            ))])),
+            None => Ok(CallToolResult::error(vec![ContentBlock::text(
+                waveform_not_found_message(&waveforms, &args.waveform_id),
+            )])),
         }
     }
 }

@@ -16,8 +16,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use waveform_mcp::{
     Command, SignalMatcher, command_help, find_conditional_events, find_signal_by_path,
-    find_signal_events, get_signal_metadata, glob_hint, help_request, list_signals, parse_args,
-    read_hierarchy, read_signal_values, usage_text,
+    find_signal_events, get_signal_metadata, glob_hint, help_request, list_signals,
+    not_found_message, parse_args, read_hierarchy, read_signal_values, usage_text,
 };
 
 /// Print the help text for `command`, or the general usage text when `None`.
@@ -71,16 +71,30 @@ impl WaveformStore {
     fn close_waveform(&mut self, waveform_id: &str) -> Result<(), String> {
         match self.waveforms.remove(waveform_id) {
             Some(_) => Ok(()),
-            None => Err(format!("Waveform not found: {}", waveform_id)),
+            None => Err(self.waveform_not_found(waveform_id)),
         }
     }
 
-    fn get(&self, waveform_id: &str) -> Option<&wellen::simple::Waveform> {
-        self.waveforms.get(waveform_id)
+    fn get(&self, waveform_id: &str) -> Result<&wellen::simple::Waveform, String> {
+        self.waveforms
+            .get(waveform_id)
+            .ok_or_else(|| self.waveform_not_found(waveform_id))
     }
 
-    fn get_mut(&mut self, waveform_id: &str) -> Option<&mut wellen::simple::Waveform> {
-        self.waveforms.get_mut(waveform_id)
+    fn get_mut(&mut self, waveform_id: &str) -> Result<&mut wellen::simple::Waveform, String> {
+        if !self.waveforms.contains_key(waveform_id) {
+            return Err(self.waveform_not_found(waveform_id));
+        }
+        Ok(self
+            .waveforms
+            .get_mut(waveform_id)
+            .expect("waveform existence was checked above"))
+    }
+
+    /// "Not found" message listing the open waveforms, or suggesting the closest id.
+    fn waveform_not_found(&self, waveform_id: &str) -> String {
+        let available: Vec<String> = self.waveforms.keys().cloned().collect();
+        not_found_message("waveform", waveform_id, &available)
     }
 }
 
@@ -101,9 +115,7 @@ fn execute_command(store: &mut WaveformStore, cmd: &Command) -> Result<String, S
             recursive,
             limit,
         } => {
-            let waveform = store
-                .get(waveform_id)
-                .ok_or_else(|| format!("Waveform not found: {}", waveform_id))?;
+            let waveform = store.get(waveform_id)?;
 
             let hierarchy = waveform.hierarchy();
             let specs: Vec<(String, waveform_mcp::MatchMode)> = patterns
@@ -136,9 +148,7 @@ fn execute_command(store: &mut WaveformStore, cmd: &Command) -> Result<String, S
             recursive,
             limit,
         } => {
-            let waveform = store
-                .get(waveform_id)
-                .ok_or_else(|| format!("Waveform not found: {}", waveform_id))?;
+            let waveform = store.get(waveform_id)?;
 
             let hierarchy = waveform.hierarchy();
             let lines = read_hierarchy(hierarchy, scope_path.as_deref(), *recursive, *limit)
@@ -162,9 +172,7 @@ fn execute_command(store: &mut WaveformStore, cmd: &Command) -> Result<String, S
             time_index,
             time_indices,
         } => {
-            let waveform = store
-                .get_mut(waveform_id)
-                .ok_or_else(|| format!("Waveform not found: {}", waveform_id))?;
+            let waveform = store.get_mut(waveform_id)?;
 
             let hierarchy = waveform.hierarchy();
             let signal_ref = find_signal_by_path(hierarchy, signal_path)
@@ -189,9 +197,7 @@ fn execute_command(store: &mut WaveformStore, cmd: &Command) -> Result<String, S
             waveform_id,
             signal_path,
         } => {
-            let waveform = store
-                .get(waveform_id)
-                .ok_or_else(|| format!("Waveform not found: {}", waveform_id))?;
+            let waveform = store.get(waveform_id)?;
 
             let hierarchy = waveform.hierarchy();
             let info = get_signal_metadata(hierarchy, signal_path)
@@ -206,9 +212,7 @@ fn execute_command(store: &mut WaveformStore, cmd: &Command) -> Result<String, S
             end_time_index,
             limit,
         } => {
-            let waveform = store
-                .get_mut(waveform_id)
-                .ok_or_else(|| format!("Waveform not found: {}", waveform_id))?;
+            let waveform = store.get_mut(waveform_id)?;
 
             let hierarchy = waveform.hierarchy();
             let signal_ref = find_signal_by_path(hierarchy, signal_path)
@@ -240,9 +244,7 @@ fn execute_command(store: &mut WaveformStore, cmd: &Command) -> Result<String, S
             end_time_index,
             limit,
         } => {
-            let waveform = store
-                .get_mut(waveform_id)
-                .ok_or_else(|| format!("Waveform not found: {}", waveform_id))?;
+            let waveform = store.get_mut(waveform_id)?;
 
             let time_table = waveform.time_table();
             let start_idx = start_time_index.unwrap_or(0);

@@ -28,6 +28,7 @@ An MCP (Model Context Protocol) server for reading and analyzing VCD/FST wavefor
 
 - `wellen` - Wavefile parsing
 - `globset` / `regex` - glob and regex signal path matching (`src/matcher.rs`)
+- `strsim` - "did you mean" suggestions for unknown ids/paths (`src/suggest.rs`)
 - `rmcp` - MCP server framework
 - `tokio` - Async runtime
 - `lalrpop` - Condition parser grammar

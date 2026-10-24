@@ -8,6 +8,7 @@ pub mod formatting;
 pub mod hierarchy;
 pub mod matcher;
 pub mod signal;
+pub mod suggest;
 
 // Re-export public functions
 pub use cli_parser::{
@@ -24,3 +25,4 @@ pub use signal::find_signal_events;
 pub use signal::get_signal_metadata;
 pub use signal::list_signals;
 pub use signal::read_signal_values;
+pub use suggest::{did_you_mean, not_found_message};
